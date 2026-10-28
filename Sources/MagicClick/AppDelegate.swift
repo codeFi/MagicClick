@@ -138,7 +138,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         showSettings()
         window?.setContentSize(NSSize(width: 580, height: 1240))
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            if let view = self?.window?.contentView, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+            // Render at 2x so the image stays sharp on Retina screens and in the README.
+            if let view = self?.window?.contentView,
+               let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(view.bounds.width * 2),
+                                          pixelsHigh: Int(view.bounds.height * 2), bitsPerSample: 8, samplesPerPixel: 4,
+                                          hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                                          bytesPerRow: 0, bitsPerPixel: 0) {
+                rep.size = view.bounds.size
                 view.cacheDisplay(in: view.bounds, to: rep)
                 try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
             }
