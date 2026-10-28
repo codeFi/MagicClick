@@ -4,7 +4,7 @@ MagicClick exists to make the Magic Mouse easier to use. We want it to work for 
 
 ## Our commitment
 
-- Every feature has a way to use it that does not need a hard gesture.
+- Where we can, a feature has a way to use it that does not need a hard gesture. The middle click has three. See [Known limitations](#known-limitations) for what is still missing.
 - The settings window is built to work with VoiceOver, Full Keyboard Access, larger text, and Increase Contrast.
 - We treat accessibility problems as bugs, not as feature requests.
 
