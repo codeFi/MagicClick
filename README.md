@@ -25,6 +25,10 @@ The Magic Mouse has one physical button. macOS looks at where your finger is and
 MagicClick fixes both. It reads your fingers on the touch surface of the mouse and turns the right gestures into the right clicks.
 
 <p align="center">
+  <img src="docs/demo.gif" width="640" alt="MagicClick demo: a 3-finger middle click, then a left click while the right button is held">
+</p>
+
+<p align="center">
   <img src="docs/screenshot.png" width="580" alt="MagicClick settings window">
 </p>
 
@@ -150,10 +154,13 @@ swift build -c release          # release build
 ./scripts/build.sh              # release .app in build/, no install
 ```
 
-To make the README screenshot:
+To make the README screenshot and demo GIF (run the binary inside the built app so the version shows):
 
 ```bash
-.build/release/MagicClick --snapshot docs/screenshot.png --demo
+./scripts/build.sh
+build/MagicClick.app/Contents/MacOS/MagicClick --snapshot docs/screenshot.png --demo middle   # or: --demo chord
+build/MagicClick.app/Contents/MacOS/MagicClick --demo-frames build/frames
+swift scripts/make-gif.swift build/frames docs/demo.gif
 ```
 
 ## Troubleshooting

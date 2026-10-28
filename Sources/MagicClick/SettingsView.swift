@@ -266,10 +266,14 @@ private struct MouseDiagram: View {
             var halves = context
             halves.clip(to: body)
             let half = size.width / 2
-            halves.fill(Path(CGRect(x: 0, y: 0, width: half, height: size.height)),
-                        with: .color(.blue.opacity(live.chordActive ? 0.4 : 0.1)))
-            halves.fill(Path(CGRect(x: half, y: 0, width: half, height: size.height)),
-                        with: .color(.orange.opacity(live.rightHeld ? 0.4 : 0.08)))
+            if isMiddle {
+                halves.fill(body, with: .color(.purple.opacity(0.35)))
+            } else {
+                halves.fill(Path(CGRect(x: 0, y: 0, width: half, height: size.height)),
+                            with: .color(.blue.opacity(live.chordActive ? 0.45 : 0.1)))
+                halves.fill(Path(CGRect(x: half, y: 0, width: half, height: size.height)),
+                            with: .color(.orange.opacity(live.rightHeld ? 0.45 : 0.08)))
+            }
 
             var divider = Path()
             divider.move(to: CGPoint(x: half, y: 6))
@@ -287,15 +291,41 @@ private struct MouseDiagram: View {
                 context.stroke(dot, with: .color(.white.opacity(0.85)), lineWidth: 2)
             }
 
+            // Say which buttons are down right now.
+            let badgeY = size.height * 0.62
+            if isMiddle {
+                drawBadge("MIDDLE", color: .purple, at: CGPoint(x: half, y: badgeY), in: context)
+            } else {
+                if live.chordActive {
+                    drawBadge("LEFT", color: .blue, at: CGPoint(x: half / 2 + 2, y: badgeY), in: context)
+                }
+                if live.rightHeld {
+                    drawBadge("RIGHT", color: .orange, at: CGPoint(x: half * 1.5 - 2, y: badgeY), in: context)
+                }
+            }
+
             let label = live.touches.isEmpty ? "No fingers" : "\(live.touches.count) finger\(live.touches.count == 1 ? "" : "s")"
             context.draw(Text(label).font(.caption2.weight(.medium)).foregroundStyle(.secondary),
                          at: CGPoint(x: half, y: size.height * 0.88))
         }
     }
 
+    private var isMiddle: Bool {
+        !live.rightHeld && live.touches.count >= middleCount
+    }
+
     private func color(for touch: Touch) -> Color {
-        if live.touches.count >= middleCount { return .purple }
+        if isMiddle { return .purple }
         return touch.x < 0.5 ? .blue : .orange
+    }
+
+    private func drawBadge(_ text: String, color: Color, at center: CGPoint, in context: GraphicsContext) {
+        let label = context.resolve(Text(text).font(.system(size: 9, weight: .heavy)).foregroundStyle(.white))
+        let textSize = label.measure(in: CGSize(width: 200, height: 50))
+        let rect = CGRect(x: center.x - textSize.width / 2 - 5, y: center.y - textSize.height / 2 - 2.5,
+                          width: textSize.width + 10, height: textSize.height + 5)
+        context.fill(Path(roundedRect: rect, cornerRadius: rect.height / 2), with: .color(color))
+        context.draw(label, at: center)
     }
 }
 
