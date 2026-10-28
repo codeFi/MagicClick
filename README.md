@@ -195,15 +195,6 @@ swift build -c release          # release build
 ./scripts/build.sh              # release .app in build/, no install
 ```
 
-To make the README screenshot and demo GIF (run the binary inside the built app so the version shows):
-
-```bash
-./scripts/build.sh
-build/MagicClick.app/Contents/MacOS/MagicClick --snapshot docs/screenshot.png --demo middle   # or: --demo chord
-build/MagicClick.app/Contents/MacOS/MagicClick --demo-frames build/frames
-swift scripts/make-gif.swift build/frames docs/demo.gif
-```
-
 ## Troubleshooting
 
 **Nothing happens when I click with 3 fingers.**
