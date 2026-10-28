@@ -64,9 +64,45 @@ Fingers that were already on the mouse when you pressed the right button are ign
 - Apple Silicon or Intel Mac
 - Magic Mouse or Magic Mouse 2 (USB-C models too). Trackpad support is optional.
 
-## Install
+## Download
 
-MagicClick is built from source. It takes about a minute.
+1. Download **`MagicClick-x.y.z.dmg`** from the [latest release](https://github.com/codeFi/MagicClick/releases/latest).
+2. Open the DMG and drag **MagicClick** into the **Applications** folder.
+3. Do the [first open](#first-open) steps below. You do this only one time.
+
+### First open
+
+MagicClick is free and open source, but it is **not notarized** by Apple. Notarization is a paid Apple check. Without it, macOS blocks the app the first time you open it. You allow it one time, like this:
+
+1. Open **MagicClick** from the Applications folder. macOS says *"MagicClick" Not Opened* or *Apple could not verify "MagicClick"*. Click **Done**. Do not click *Move to Trash*.
+2. Open the Apple menu → **System Settings** → **Privacy & Security**.
+3. Scroll down to the **Security** section. You see *"MagicClick" was blocked to protect your Mac.* Click **Open Anyway**.
+4. Enter your password or use Touch ID. Then click **Open Anyway** again in the dialog.
+5. MagicClick opens and shows its settings window. Click **Open Accessibility Settings** and turn on **MagicClick** in the list. MagicClick needs this permission to change clicks. The window updates by itself when the permission is on.
+6. Look for the mouse icon in the menu bar. Click it and choose **Settings…** to change anything.
+
+> **Do you not see "Open Anyway"?** It shows only for about an hour after you try to open the app. Do step 1 again, then go back to Privacy & Security.
+
+**Or use Terminal instead of steps 1–4.** This removes the "downloaded from the internet" mark from the app:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/MagicClick.app
+```
+
+Then open MagicClick and do step 5.
+
+### Updating
+
+1. Quit MagicClick from the menu bar.
+2. Drag the new version into Applications, and choose **Replace**.
+3. Do the [first open](#first-open) steps again.
+4. Go to **System Settings → Privacy & Security → Accessibility**. Select **MagicClick**, click the **–** button to remove it, then open MagicClick and turn the permission on again. The download is signed *ad hoc*, so macOS sees each version as a new app.
+
+### Is it safe?
+
+The whole source code is in this repo. MagicClick has no network access and collects no data. The DMG is built from this code with [`scripts/make-dmg.sh`](scripts/make-dmg.sh). If you do not want to trust a download, [build it yourself](#build-from-source). It takes about a minute.
+
+## Build from source
 
 1. Install the Xcode Command Line Tools if you do not have them:
 
@@ -82,11 +118,13 @@ MagicClick is built from source. It takes about a minute.
    ./scripts/build.sh install
    ```
 
-   This builds `MagicClick.app`, copies it to `~/Applications`, and opens it.
+   This builds `MagicClick.app`, copies it to `~/Applications`, and opens it. An app you build yourself is not blocked by macOS, so you can skip the first open steps.
 
 3. Give MagicClick **Accessibility** permission. The settings window shows a button for this. You can also go to **System Settings → Privacy & Security → Accessibility** and turn on **MagicClick**. The window updates by itself when the permission is on.
 
 4. Look for the mouse icon in the menu bar. Click it and choose **Settings…** to change anything.
+
+To make the DMG yourself, run `./scripts/make-dmg.sh`. It writes `build/MagicClick-<version>.dmg`.
 
 ### Keep the permission across rebuilds
 
@@ -140,6 +178,9 @@ Sources/MagicClick/
   SettingsView.swift  SwiftUI settings window
 scripts/
   build.sh            Builds, signs and installs the .app
+  make-dmg.sh         Builds the DMG for a GitHub release
+  release.sh          Signed and notarized build (needs a Developer ID)
+  make-gif.swift      Turns demo frames into the README GIF
   make-icon.swift     Draws the app icon
 Resources/
   Info.plist
