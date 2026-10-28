@@ -6,12 +6,14 @@
 #   2. A notarytool login saved as a keychain profile:
 #        xcrun notarytool store-credentials notary --apple-id YOUR_APPLE_ID --team-id YOUR_TEAM_ID
 #
-# Set SIGN_IDENTITY or NOTARY_PROFILE to override the defaults below.
+# SIGN_IDENTITY is required, so a release is never signed with the wrong certificate by mistake:
+#   SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./scripts/release.sh
+# Set NOTARY_PROFILE if your keychain profile is not called "notary".
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 VERSION="$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" Resources/Info.plist)"
-IDENTITY="${SIGN_IDENTITY:-Developer ID Application}"
+IDENTITY="${SIGN_IDENTITY:?Set SIGN_IDENTITY to the full name of your Developer ID Application certificate}"
 PROFILE="${NOTARY_PROFILE:-notary}"
 APP=build/MagicClick.app
 ZIP="build/MagicClick-$VERSION.zip"
