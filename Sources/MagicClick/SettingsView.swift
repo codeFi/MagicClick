@@ -210,6 +210,10 @@ private struct LivePreview: View {
         HStack(alignment: .center, spacing: 28) {
             MouseDiagram(live: model.live, middleCount: model.fingerCount)
                 .frame(width: 112, height: 196)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Magic Mouse live view")
+                .accessibilityValue(liveDescription)
+                .accessibilityAddTraits(.updatesFrequently)
             VStack(alignment: .leading, spacing: 10) {
                 LegendRow(color: .blue, title: "Left half", detail: "Left click. While right is held, touch here to left-click.")
                 LegendRow(color: .orange, title: "Right half", detail: "Right click.")
@@ -232,6 +236,16 @@ private struct LivePreview: View {
         }
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity)
+    }
+
+    /// What VoiceOver reads for the mouse drawing.
+    private var liveDescription: String {
+        let touches = model.live.touches
+        var parts = [touches.isEmpty ? "No fingers" : "\(touches.count) finger\(touches.count == 1 ? "" : "s") on the mouse"]
+        if model.live.rightHeld { parts.append("right button held") }
+        if model.live.chordActive { parts.append("left button pressed") }
+        if !model.live.rightHeld, touches.count >= model.fingerCount { parts.append("a click now is a middle click") }
+        return parts.joined(separator: ", ")
     }
 }
 

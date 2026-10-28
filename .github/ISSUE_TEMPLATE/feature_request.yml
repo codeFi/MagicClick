@@ -1,0 +1,22 @@
+name: Feature request
+description: Suggest a new gesture, option or improvement.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What do you want to do?
+      description: Describe the problem, not only the solution. A real example helps.
+      placeholder: In Blender I want to pan without pressing the mouse, because...
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+      description: How could MagicClick help?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Other options you tried
+      description: Other apps, settings or workarounds.

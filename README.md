@@ -228,11 +228,11 @@ macOS can freeze input when an app loses Accessibility while its event tap is ac
 
 ## Contributing
 
-Bug reports, ideas and pull requests are welcome.
+Bug reports, ideas and pull requests are welcome. Read the [contributing guide](CONTRIBUTING.md) to get started.
 
-1. Fork the repo and make a branch.
-2. Build with `swift build` and test on a real Magic Mouse.
-3. Open a pull request that says what you changed and how you tested it.
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Security policy](SECURITY.md): report security problems privately
+- [Accessibility](ACCESSIBILITY.md): alternatives to gestures and known limits
 
 ## Credits
 

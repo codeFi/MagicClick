@@ -1,0 +1,67 @@
+name: Bug report
+description: Something does not work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for the report! For a security problem, do not use this form. See [SECURITY.md](https://github.com/codeFi/MagicClick/blob/main/SECURITY.md).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Tell us what you did, what you expected, and what happened instead.
+      placeholder: I held the right click and touched the left half, but no left click happened.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to make it happen
+      placeholder: |
+        1. Open Settings…
+        2. Rest 3 fingers on the mouse
+        3. Click
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: MagicClick version
+      description: Shown at the bottom of the settings window.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "macOS 15.3"
+    validations:
+      required: true
+  - type: dropdown
+    id: mouse
+    attributes:
+      label: Mouse
+      options:
+        - Magic Mouse (first generation, AA batteries)
+        - Magic Mouse 2 (Lightning)
+        - Magic Mouse (USB-C)
+        - Trackpad
+        - Other mouse
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install it?
+      options:
+        - DMG from the Releases page
+        - Built from source
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Screenshots or a short recording of the live view help a lot. You can drag files into this box.

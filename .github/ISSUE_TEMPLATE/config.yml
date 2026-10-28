@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security problem
+    url: https://github.com/codeFi/MagicClick/security/advisories/new
+    about: Report it privately, not in a public issue.
+  - name: Help with the first open
+    url: https://github.com/codeFi/MagicClick#first-open
+    about: macOS blocks the app the first time. These steps allow it.
