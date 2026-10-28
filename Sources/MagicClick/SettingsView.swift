@@ -36,6 +36,9 @@ struct SettingsView: View {
                     Text("4").tag(4)
                 } label: {
                     Text("Number of fingers")
+                    if model.fingerCount == 2 {
+                        Text("⚠️ With 2, a normal left click becomes a middle click when another finger rests on the mouse.")
+                    }
                 }
                 .pickerStyle(.segmented)
                 .disabled(!model.fingerClick && !model.fingerTap)
