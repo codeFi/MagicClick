@@ -23,7 +23,12 @@ cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 IDENTITY="${SIGN_IDENTITY:--}"
-codesign --force --options runtime --sign "$IDENTITY" "$APP"
+if [ "$IDENTITY" = "-" ]; then
+    codesign --force --options runtime --sign - "$APP"
+else
+    # Notarization needs a secure timestamp.
+    codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
+fi
 echo "Built $APP (signed with: $IDENTITY)"
 
 if [ "${1:-}" = "install" ]; then
