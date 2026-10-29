@@ -41,7 +41,7 @@ SIGN_IDENTITY="Apple Development: Your Name (TEAMID)" ./scripts/build.sh install
 | File | What it does |
 | --- | --- |
 | `Multitouch.swift` | Reads finger positions from the private MultitouchSupport framework |
-| `Engine.swift` | Event tap: middle click, chord click, key trigger |
+| `Engine.swift` | Event tap: middle click, chord click, key trigger, zoom and rotate |
 | `KeyTrigger.swift` | Keyboard trigger model and key names |
 | `AppModel.swift` | Saved settings and live status |
 | `AppDelegate.swift` | Menu bar item, settings window, screenshot and demo modes |
@@ -64,6 +64,8 @@ There are no automated tests for the event tap, because it needs a real mouse an
 - [ ] A normal left click and right click still work, also with a finger resting on the mouse
 - [ ] A 3-finger click gives a middle click (open a link in a browser: it should open in a new tab)
 - [ ] Hold right, touch the left half: the live view shows **LEFT** and **RIGHT**
+- [ ] Two fingers apart or together zoom in Safari or Preview, at the pointer. Two fingers sliding the same way still scroll.
+- [ ] Two fingers that turn rotate the map in Maps
 - [ ] The keyboard key works, if your change touches it
 - [ ] Turning MagicClick off in the menu bar gives the normal mouse behavior back
 

@@ -75,6 +75,19 @@ struct SettingsView: View {
             }
 
             Section {
+                Toggle(isOn: $model.pinchZoom) {
+                    Text("Pinch to zoom")
+                    Text("Move two fingers apart or together on the mouse. Apps zoom where the pointer is, like with a trackpad pinch.")
+                }
+                Toggle(isOn: $model.rotate) {
+                    Text("Rotate")
+                    Text("Turn two fingers on the mouse, like turning a dial. Works in apps like Maps, Preview and Photos.")
+                }
+            } header: {
+                SectionTitle("Zoom and rotate", symbol: "arrow.up.left.and.arrow.down.right")
+            }
+
+            Section {
                 Toggle("Enabled", isOn: $model.enabled)
                 Toggle("Open at login", isOn: $model.launchAtLogin)
             } header: {

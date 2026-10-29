@@ -5,7 +5,7 @@
 <h1 align="center">MagicClick</h1>
 
 <p align="center">
-  <b>Middle click and chord click for the Apple Magic Mouse.</b><br>
+  <b>Middle click, chord click, pinch to zoom and rotate for the Apple Magic Mouse.</b><br>
   A tiny, free and open-source menu bar app for macOS.
 </p>
 
@@ -49,6 +49,14 @@ MagicClick fixes both. It reads your fingers on the touch surface of the mouse a
 Hold the right click. Then touch the **left half** of the mouse with another finger. MagicClick sends a left button press. The left button stays down until you lift that finger, so you can click or hold.
 
 Fingers that were already on the mouse when you pressed the right button are ignored. A finger that lands on the right half is ignored too, even if it slides left.
+
+### Pinch to zoom and rotate
+- **Zoom** – Move two fingers apart or together on the mouse, like a pinch on the trackpad. It works in Safari, Preview, Photos, Maps, most browsers and other apps that support trackpad pinch.
+- **Rotate** – Turn two fingers on the mouse, like turning a dial. It works in Maps, Preview, Photos and other apps that support trackpad rotation.
+
+MagicClick sends the same gesture events that a trackpad sends, so apps zoom and rotate **where the pointer is**. A gesture is a zoom or a rotation, not both: the first clear movement decides.
+
+Two fingers that slide the same way still scroll or swipe as usual. During a gesture, the mouse does not scroll the page.
 
 ### The rest
 - **Live view** – The settings window shows your fingers on the mouse in real time. Use it to learn the gestures.
@@ -147,6 +155,8 @@ SIGN_IDENTITY="Apple Development: Your Name (TEAMID)" ./scripts/build.sh install
 | Middle click from the keyboard | Set a **Keyboard key**, then press it |
 | Middle drag from the keyboard | Hold the key and move the mouse |
 | Left click while right is held | Hold right click, then touch the left half with another finger |
+| Zoom in or out | Move two fingers apart or together on the mouse |
+| Rotate | Turn two fingers on the mouse |
 | Pause MagicClick | Menu bar icon → **Enabled** |
 
 ### Tips
@@ -157,11 +167,12 @@ SIGN_IDENTITY="Apple Development: Your Name (TEAMID)" ./scripts/build.sh install
 
 ## How it works
 
-MagicClick has three parts:
+MagicClick has four parts:
 
 1. **Touch reader** (`Multitouch.swift`). It loads Apple's private `MultitouchSupport` framework at run time and gets a callback about 100 times a second with the position of each finger. It tells the Magic Mouse apart from trackpads by the device family ID.
 2. **Event tap** (`Engine.swift`). A `CGEventTap` sees every mouse and keyboard event before apps do. When you press the mouse and 3 or more fingers are on it, the tap changes the event into a middle-button event. When your chosen key goes down or up, the tap removes the key event and sends a middle-button event instead.
 3. **Chord logic** (`Engine.swift`). When the right button goes down, MagicClick remembers which fingers are on the mouse. A *new* finger on the left half sends a left button press. Lifting that finger sends the release.
+4. **Zoom and rotate** (`Engine.swift`). When two fingers move apart or together, MagicClick sends a zoom gesture event at the pointer. When they turn, it sends a rotation gesture event. These are the same private event types that the trackpad driver sends. While a gesture runs, the tap drops the mouse's own scroll events.
 
 Events that MagicClick sends carry a marker, so its own tap lets them through and never loops.
 
@@ -172,7 +183,7 @@ Sources/MagicClick/
   main.swift          App entry point
   AppDelegate.swift   Menu bar item, settings window, permission checks
   AppModel.swift      Saved settings and live status for the UI
-  Engine.swift        Event tap, middle click, chord click, key trigger
+  Engine.swift        Event tap, middle click, chord click, key trigger, zoom and rotate
   Multitouch.swift    Reads fingers from MultitouchSupport.framework
   KeyTrigger.swift    Keyboard trigger model and key names
   SettingsView.swift  SwiftUI settings window
@@ -214,6 +225,9 @@ macOS can freeze input when an app loses Accessibility while its event tap is ac
 ## Limits
 
 - The Magic Mouse cannot report a second physical press while the button is down. The chord left click uses a **touch**, not a press, for this reason.
+- Zoom and rotate work only in apps that support the trackpad gestures. Apps that zoom only with `⌘+` and `⌘−` do not respond to them.
+- Rotation starts after the fingers turn about 15°, so small movements of resting fingers do nothing.
+- For 2 seconds after a zoom or rotation, MagicClick drops leftover scroll momentum. A scroll wheel on another mouse is also ignored in that time.
 - MagicClick uses a private framework, so it can never be on the Mac App Store.
 - The app is not sandboxed. An event tap that changes events cannot run in the App Sandbox.
 

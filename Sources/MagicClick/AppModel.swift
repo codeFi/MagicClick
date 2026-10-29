@@ -14,6 +14,8 @@ final class AppModel: ObservableObject {
     @Published var trigger: KeyTrigger? { didSet { save() } }
     @Published var extraButton: Int { didSet { save() } }
     @Published var chord: Bool { didSet { save() } }
+    @Published var pinchZoom: Bool { didSet { save() } }
+    @Published var rotate: Bool { didSet { save() } }
 
     @Published var isRecording = false
     @Published var trusted = false
@@ -38,7 +40,7 @@ final class AppModel: ObservableObject {
     private init() {
         defaults.register(defaults: [
             "enabled": true, "fingerClick": true, "fingerCount": 3, "fingerTap": false,
-            "includeTrackpad": false, "extraButton": 0, "chord": true,
+            "includeTrackpad": false, "extraButton": 0, "chord": true, "pinchZoom": true, "rotate": true,
         ])
         enabled = defaults.bool(forKey: "enabled")
         fingerClick = defaults.bool(forKey: "fingerClick")
@@ -47,13 +49,16 @@ final class AppModel: ObservableObject {
         includeTrackpad = defaults.bool(forKey: "includeTrackpad")
         extraButton = defaults.integer(forKey: "extraButton")
         chord = defaults.bool(forKey: "chord")
+        pinchZoom = defaults.bool(forKey: "pinchZoom")
+        rotate = defaults.bool(forKey: "rotate")
         trigger = defaults.data(forKey: "trigger").flatMap { try? JSONDecoder().decode(KeyTrigger.self, from: $0) }
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 
     var config: EngineConfig {
         EngineConfig(enabled: enabled, fingerClick: fingerClick, fingerCount: fingerCount, fingerTap: fingerTap,
-                     includeTrackpad: includeTrackpad, trigger: trigger, extraButton: extraButton, chord: chord)
+                     includeTrackpad: includeTrackpad, trigger: trigger, extraButton: extraButton, chord: chord,
+                     pinchZoom: pinchZoom, rotate: rotate)
     }
 
     /// False while rendering the README screenshot, so demo values are not saved.
@@ -68,6 +73,8 @@ final class AppModel: ObservableObject {
         defaults.set(includeTrackpad, forKey: "includeTrackpad")
         defaults.set(extraButton, forKey: "extraButton")
         defaults.set(chord, forKey: "chord")
+        defaults.set(pinchZoom, forKey: "pinchZoom")
+        defaults.set(rotate, forKey: "rotate")
         defaults.set(trigger.flatMap { try? JSONEncoder().encode($0) }, forKey: "trigger")
         Engine.shared.apply(config)
     }

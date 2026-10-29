@@ -12,6 +12,8 @@ struct EngineConfig: Equatable {
     /// 0 is off. Otherwise the zero-based button number of an extra mouse button (3 is "button 4").
     var extraButton = 0
     var chord = true
+    var pinchZoom = true
+    var rotate = true
 }
 
 /// What the live view in the settings window draws.
@@ -53,6 +55,9 @@ final class Engine {
     private var rightBaseline: Set<Int32> = []
     private var chordFinger: Int32?
     private var gestures: [MTDeviceRef: Gesture] = [:]
+    private var pinch: Pinch?
+    /// Until this time, scroll momentum left over from a pinch is dropped.
+    private var swallowScrollUntil: TimeInterval = 0
 
     // Main thread only.
     private var tap: CFMachPort?
@@ -71,6 +76,40 @@ final class Engine {
         var moved = false
         var clicked = false
     }
+
+    /// Two fingers on the mouse that may become a zoom or a rotation.
+    private struct Pinch {
+        enum Kind { case zoom, rotate }
+        let ids: [Int32]
+        var origins: [Int32: (x: Float, y: Float)]
+        var startDistance: Float
+        var lastDistance: Float
+        var startAngle: Float
+        var lastAngle: Float
+        /// Nil until the fingers move enough. Then it stays the same until a finger lifts.
+        var kind: Kind?
+        /// Set when the fingers slide the same way or a button is down. Then it never becomes a gesture.
+        var blocked = false
+        var active: Bool { kind != nil }
+    }
+
+    // Private CGEvent fields for trackpad gestures, as the trackpad driver sends them.
+    private static let gestureEventType = CGEventType(rawValue: 29)
+    private static let gestureHIDTypeField = CGEventField(rawValue: 110)
+    private static let gestureZoomField = CGEventField(rawValue: 113)
+    private static let gestureRotationField = CGEventField(rawValue: 114)
+    private static let gesturePhaseField = CGEventField(rawValue: 132)
+    private static let hidZoomType: Int64 = 8
+    private static let hidRotationType: Int64 = 5
+    private enum GesturePhase: Int64 { case began = 1, changed = 2, ended = 4 }
+    /// How much the fingers must move apart or together before the zoom starts.
+    private static let pinchThreshold: Float = 0.06
+    /// Converts the change in finger distance to the zoom amount macOS expects.
+    private static let pinchGain = 1.5
+    /// How far the fingers must turn, in degrees, before the rotation starts.
+    private static let rotateThreshold: Float = 15
+    /// How far each finger must travel along the turn, so close fingers that wiggle do not rotate.
+    private static let rotateTravel: Float = 0.05
 
     var isTapRunning: Bool { tap != nil }
 
@@ -99,7 +138,7 @@ final class Engine {
             .leftMouseDown, .leftMouseUp, .leftMouseDragged,
             .rightMouseDown, .rightMouseUp, .rightMouseDragged,
             .otherMouseDown, .otherMouseUp, .otherMouseDragged,
-            .mouseMoved, .keyDown, .keyUp, .flagsChanged,
+            .mouseMoved, .scrollWheel, .keyDown, .keyUp, .flagsChanged,
         ]
         var mask = types.reduce(CGEventMask(0)) { $0 | (1 << $1.rawValue) }
         mask |= 1 << 14 // NSEventTypeSystemDefined: media and special keys
@@ -206,6 +245,8 @@ final class Engine {
                 event.flags = event.flags.subtracting(Self.hiddenFlags(config.trigger))
             }
             return event
+        case .scrollWheel:
+            return scrollEvent(event)
         case .keyDown, .keyUp, .flagsChanged:
             return keyEvent(type, event, config)
         default:
@@ -231,6 +272,20 @@ final class Engine {
             }
         }
         return event
+    }
+
+    /// Drops the mouse's own scrolling while a pinch runs, and the momentum after it.
+    private func scrollEvent(_ event: CGEvent) -> CGEvent? {
+        lock.withLock {
+            if pinch?.active == true { return nil }
+            guard ProcessInfo.processInfo.systemUptime < swallowScrollUntil else { return event }
+            // A new scroll that starts after the pinch is the user's, so let it through.
+            if event.getIntegerValueField(.scrollWheelEventScrollPhase) == 1 {
+                swallowScrollUntil = 0
+                return event
+            }
+            return nil
+        }
     }
 
     private func keyEvent(_ type: CGEventType, _ event: CGEvent, _ config: EngineConfig) -> CGEvent? {
@@ -302,6 +357,14 @@ final class Engine {
                 }
             }
 
+            if isMouse {
+                if config.enabled, config.pinchZoom || config.rotate {
+                    trackPinch(touches: touches, now: now, config: config, actions: &actions)
+                } else {
+                    endPinch(now: now, actions: &actions)
+                }
+            }
+
             if config.enabled, config.fingerTap, isMouse || config.includeTrackpad {
                 trackTap(device: device, touches: touches, now: now, config: config, actions: &actions)
             }
@@ -344,6 +407,90 @@ final class Engine {
         gestures[device] = gesture
     }
 
+    /// Two fingers that move apart or together zoom, and two fingers that turn rotate,
+    /// like the same gestures on the trackpad.
+    private func trackPinch(touches: [Touch], now: TimeInterval, config: EngineConfig, actions: inout [() -> Void]) {
+        let ids = touches.map(\.id).sorted()
+        guard touches.count == 2, !rightHeld, chordFinger == nil else {
+            endPinch(now: now, actions: &actions)
+            return
+        }
+        if pinch?.ids != ids { endPinch(now: now, actions: &actions) }
+        // Ordered by finger ID, so the angle does not jump when the fingers cross.
+        let pair = touches.sorted { $0.id < $1.id }
+        let distance = hypot(pair[0].x - pair[1].x, pair[0].y - pair[1].y)
+        let angle = atan2(pair[1].y - pair[0].y, pair[1].x - pair[0].x) * 180 / .pi
+        guard var current = pinch else {
+            let buttonDown = CGEventSource.buttonState(.combinedSessionState, button: .left)
+                || CGEventSource.buttonState(.combinedSessionState, button: .right)
+            pinch = Pinch(ids: ids, origins: Dictionary(uniqueKeysWithValues: touches.map { ($0.id, ($0.x, $0.y)) }),
+                          startDistance: distance, lastDistance: distance, startAngle: angle, lastAngle: angle,
+                          blocked: buttonDown)
+            return
+        }
+        defer { pinch = current }
+
+        guard let kind = current.kind else {
+            guard !current.blocked else { return }
+            let turned = abs(Self.angleDifference(angle, current.startAngle))
+            let zooms = config.pinchZoom && abs(distance - current.startDistance) > Self.pinchThreshold
+            let rotates = config.rotate && turned > Self.rotateThreshold
+                && turned * .pi / 180 * distance / 2 > Self.rotateTravel
+            guard zooms || rotates else { return }
+            // Both fingers sliding the same way is a scroll or a swipe, not a gesture.
+            let moves = touches.map { touch -> (x: Float, y: Float) in
+                let origin = current.origins[touch.id] ?? (touch.x, touch.y)
+                return (touch.x - origin.x, touch.y - origin.y)
+            }
+            let lengths = moves.map { hypot($0.x, $0.y) }
+            if lengths.allSatisfy({ $0 > 0.02 }),
+               (moves[0].x * moves[1].x + moves[0].y * moves[1].y) / (lengths[0] * lengths[1]) > 0.5 {
+                current.blocked = true
+                return
+            }
+            let started: Pinch.Kind = zooms ? .zoom : .rotate
+            current.kind = started
+            current.lastDistance = distance
+            current.lastAngle = angle
+            actions.append {
+                self.postGesture(started, .began, 0)
+                self.report(started == .zoom ? "Pinch to zoom" : "Rotate")
+            }
+            return
+        }
+
+        switch kind {
+        case .zoom:
+            let amount = Double(distance / current.lastDistance - 1) * Self.pinchGain
+            guard abs(amount) > 0.002 else { return }
+            current.lastDistance = distance
+            actions.append { self.postGesture(.zoom, .changed, amount) }
+        case .rotate:
+            let degrees = Double(Self.angleDifference(angle, current.lastAngle))
+            guard abs(degrees) > 0.2 else { return }
+            current.lastAngle = angle
+            actions.append { self.postGesture(.rotate, .changed, degrees) }
+        }
+    }
+
+    // Call with `lock` held.
+    private func endPinch(now: TimeInterval, actions: inout [() -> Void]) {
+        guard let current = pinch else { return }
+        pinch = nil
+        if let kind = current.kind {
+            swallowScrollUntil = now + 2
+            actions.append { self.postGesture(kind, .ended, 0) }
+        }
+    }
+
+    /// The shortest turn from `b` to `a`, in degrees from -180 to 180.
+    private static func angleDifference(_ a: Float, _ b: Float) -> Float {
+        var difference = a - b
+        while difference > 180 { difference -= 360 }
+        while difference < -180 { difference += 360 }
+        return difference
+    }
+
     // Call with `lock` held.
     private func mouseTouches() -> [Touch] {
         deviceTouches.filter { deviceIsMouse[$0.key] == true }.flatMap(\.value)
@@ -370,6 +517,21 @@ final class Engine {
         event.setIntegerValueField(.eventSourceUserData, value: Self.marker)
         event.setIntegerValueField(.mouseEventClickState, value: clicks.state(for: type, button: button, at: location))
         if !hiding.isEmpty { event.flags = event.flags.subtracting(hiding) }
+        event.post(tap: .cghidEventTap)
+    }
+
+    /// Sends a zoom or rotate gesture at the pointer, the same event a trackpad makes.
+    /// A zoom amount is a change in scale. A rotation is in degrees, counterclockwise is positive.
+    private func postGesture(_ kind: Pinch.Kind, _ phase: GesturePhase, _ value: Double) {
+        guard let type = Self.gestureEventType, let hidType = Self.gestureHIDTypeField,
+              let valueField = kind == .zoom ? Self.gestureZoomField : Self.gestureRotationField,
+              let phaseField = Self.gesturePhaseField, let event = CGEvent(source: nil) else { return }
+        event.type = type
+        event.location = CGEvent(source: nil)?.location ?? .zero
+        event.setIntegerValueField(.eventSourceUserData, value: Self.marker)
+        event.setIntegerValueField(hidType, value: kind == .zoom ? Self.hidZoomType : Self.hidRotationType)
+        event.setDoubleValueField(valueField, value: value)
+        event.setIntegerValueField(phaseField, value: phase.rawValue)
         event.post(tap: .cghidEventTap)
     }
 
