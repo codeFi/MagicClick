@@ -25,7 +25,7 @@ The Magic Mouse has one physical button. macOS looks at where your finger is and
 MagicClick fixes both. It reads your fingers on the touch surface of the mouse and turns the right gestures into the right clicks.
 
 <p align="center">
-  <img src="docs/demo.gif" width="640" alt="MagicClick demo: a 3-finger middle click, then a left click while the right button is held">
+  <img src="docs/demo.gif" width="640" alt="MagicClick demo: a 3-finger middle click, a left click while the right button is held, then two-finger zoom and rotate">
 </p>
 
 <p align="center">

@@ -4,6 +4,8 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>MagicClick</string>
 	<key>CFBundleExecutable</key>
 	<string>MagicClick</string>
 	<key>CFBundleIconFile</key>
@@ -12,20 +14,18 @@
 	<string>io.github.codefi.MagicClick</string>
 	<key>CFBundleName</key>
 	<string>MagicClick</string>
-	<key>CFBundleDisplayName</key>
-	<string>MagicClick</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0.0</string>
+	<string>1.1.0</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>2</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>LSUIElement</key>
 	<true/>
-	<key>LSApplicationCategoryType</key>
-	<string>public.app-category.utilities</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>MIT License</string>
 </dict>

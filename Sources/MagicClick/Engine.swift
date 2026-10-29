@@ -16,11 +16,15 @@ struct EngineConfig: Equatable {
     var rotate = true
 }
 
+/// A two-finger gesture that MagicClick sends as a trackpad gesture.
+enum GestureKind { case zoom, rotate }
+
 /// What the live view in the settings window draws.
 struct LiveSnapshot: Equatable {
     var touches: [Touch] = []
     var rightHeld = false
     var chordActive = false
+    var gesture: GestureKind?
 }
 
 private let eventTapCallback: CGEventTapCallBack = { _, type, event, _ in
@@ -79,7 +83,6 @@ final class Engine {
 
     /// Two fingers on the mouse that may become a zoom or a rotation.
     private struct Pinch {
-        enum Kind { case zoom, rotate }
         let ids: [Int32]
         var origins: [Int32: (x: Float, y: Float)]
         var startDistance: Float
@@ -87,7 +90,7 @@ final class Engine {
         var startAngle: Float
         var lastAngle: Float
         /// Nil until the fingers move enough. Then it stays the same until a finger lifts.
-        var kind: Kind?
+        var kind: GestureKind?
         /// Set when the fingers slide the same way or a button is down. Then it never becomes a gesture.
         var blocked = false
         var active: Bool { kind != nil }
@@ -371,7 +374,8 @@ final class Engine {
 
             if liveEnabled, isMouse, now - lastLiveSend > 1.0 / 30 || touches.isEmpty {
                 lastLiveSend = now
-                live = LiveSnapshot(touches: touches, rightHeld: rightHeld, chordActive: chordFinger != nil)
+                live = LiveSnapshot(touches: touches, rightHeld: rightHeld, chordActive: chordFinger != nil,
+                                    gesture: pinch?.kind)
             }
         }
 
@@ -448,7 +452,7 @@ final class Engine {
                 current.blocked = true
                 return
             }
-            let started: Pinch.Kind = zooms ? .zoom : .rotate
+            let started: GestureKind = zooms ? .zoom : .rotate
             current.kind = started
             current.lastDistance = distance
             current.lastAngle = angle
@@ -522,7 +526,7 @@ final class Engine {
 
     /// Sends a zoom or rotate gesture at the pointer, the same event a trackpad makes.
     /// A zoom amount is a change in scale. A rotation is in degrees, counterclockwise is positive.
-    private func postGesture(_ kind: Pinch.Kind, _ phase: GesturePhase, _ value: Double) {
+    private func postGesture(_ kind: GestureKind, _ phase: GesturePhase, _ value: Double) {
         guard let type = Self.gestureEventType, let hidType = Self.gestureHIDTypeField,
               let valueField = kind == .zoom ? Self.gestureZoomField : Self.gestureRotationField,
               let phaseField = Self.gesturePhaseField, let event = CGEvent(source: nil) else { return }

@@ -137,7 +137,7 @@ private struct HeaderView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("MagicClick")
                         .font(.title2.weight(.bold))
-                    Text("Middle click and chord click for the Magic Mouse")
+                    Text("Middle click, chord click and gestures for the Magic Mouse")
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -257,6 +257,7 @@ private struct LivePreview: View {
         var parts = [touches.isEmpty ? "No fingers" : "\(touches.count) finger\(touches.count == 1 ? "" : "s") on the mouse"]
         if model.live.rightHeld { parts.append("right button held") }
         if model.live.chordActive { parts.append("left button pressed") }
+        if let gesture = model.live.gesture { parts.append(gesture == .zoom ? "zooming" : "rotating") }
         if !model.live.rightHeld, touches.count >= model.fingerCount { parts.append("a click now is a middle click") }
         return parts.joined(separator: ", ")
     }
@@ -296,7 +297,9 @@ private struct MouseDiagram: View {
             var halves = context
             halves.clip(to: body)
             let half = size.width / 2
-            if isMiddle {
+            if let gestureColor {
+                halves.fill(body, with: .color(gestureColor.opacity(0.3)))
+            } else if isMiddle {
                 halves.fill(body, with: .color(.purple.opacity(0.35)))
             } else {
                 halves.fill(Path(CGRect(x: 0, y: 0, width: half, height: size.height)),
@@ -311,8 +314,16 @@ private struct MouseDiagram: View {
             context.stroke(divider, with: .color(.secondary.opacity(0.4)), lineWidth: 1)
             context.stroke(body, with: .color(.secondary.opacity(0.5)), lineWidth: 1.5)
 
+            // Join the two fingers, so the zoom or the turn is easy to see.
+            if live.gesture != nil, live.touches.count == 2 {
+                var link = Path()
+                link.move(to: point(for: live.touches[0], in: size))
+                link.addLine(to: point(for: live.touches[1], in: size))
+                context.stroke(link, with: .color(.white.opacity(0.7)), style: StrokeStyle(lineWidth: 2, dash: [4, 3]))
+            }
+
             for touch in live.touches {
-                let center = CGPoint(x: CGFloat(touch.x) * size.width, y: (1 - CGFloat(touch.y)) * size.height)
+                let center = point(for: touch, in: size)
                 let dot = Path(ellipseIn: CGRect(x: center.x - 12, y: center.y - 12, width: 24, height: 24))
                 let color = color(for: touch)
                 var glow = context
@@ -323,7 +334,9 @@ private struct MouseDiagram: View {
 
             // Say which buttons are down right now.
             let badgeY = size.height * 0.62
-            if isMiddle {
+            if let gesture = live.gesture, let gestureColor {
+                drawBadge(gesture == .zoom ? "ZOOM" : "ROTATE", color: gestureColor, at: CGPoint(x: half, y: badgeY), in: context)
+            } else if isMiddle {
                 drawBadge("MIDDLE", color: .purple, at: CGPoint(x: half, y: badgeY), in: context)
             } else {
                 if live.chordActive {
@@ -344,7 +357,16 @@ private struct MouseDiagram: View {
         !live.rightHeld && live.touches.count >= middleCount
     }
 
+    private var gestureColor: Color? {
+        live.gesture == nil ? nil : .teal
+    }
+
+    private func point(for touch: Touch, in size: CGSize) -> CGPoint {
+        CGPoint(x: CGFloat(touch.x) * size.width, y: (1 - CGFloat(touch.y)) * size.height)
+    }
+
     private func color(for touch: Touch) -> Color {
+        if let gestureColor { return gestureColor }
         if isMiddle { return .purple }
         return touch.x < 0.5 ? .blue : .orange
     }

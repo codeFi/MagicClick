@@ -1,8 +1,17 @@
-Middle click and left-click-while-right-held for the Apple Magic Mouse.
+Middle click, left-click-while-right-held, pinch to zoom and rotate for the Apple Magic Mouse.
+
+## New in 1.1.0
+
+- **Pinch to zoom:** move two fingers apart or together on the mouse. Apps zoom where the pointer is, like with a trackpad pinch.
+- **Rotate:** turn two fingers on the mouse to rotate maps, photos and PDFs.
+- The live view shows a **ZOOM** or **ROTATE** badge during the gesture.
+- Both have their own switch in the settings window.
+
+**Updating from 1.0.0?** Quit MagicClick, replace the app, and do the first-open steps again. Then go to **System Settings → Privacy & Security → Accessibility**, remove MagicClick with **–**, and turn it on again. See [README → Updating](https://github.com/codeFi/MagicClick#updating).
 
 ## Install
 
-1. Download **MagicClick-1.0.0.dmg** below.
+1. Download **MagicClick-1.1.0.dmg** below.
 2. Open it and drag **MagicClick** into **Applications**.
 3. Open MagicClick. macOS blocks it the first time, because the app is not notarized. Click **Done**.
 4. Go to **System Settings → Privacy & Security**, scroll to **Security**, and click **Open Anyway** next to *"MagicClick" was blocked*. Enter your password and click **Open Anyway** again.
@@ -20,7 +29,8 @@ Full guide: [README → Download](https://github.com/codeFi/MagicClick#download)
 
 - **Middle click** with a 3-finger click (or 2 or 4), an optional 3-finger tap, any keyboard key (F-keys, media keys, fn, right ⌘ ⌥ ⌃ ⇧), or button 4/5 on other mice
 - **Left click while the right button is held:** hold right, touch the left half of the mouse
-- **Live view** of your fingers with LEFT / RIGHT / MIDDLE badges
+- **Pinch to zoom and rotate** with two fingers, at the pointer
+- **Live view** of your fingers with LEFT / RIGHT / MIDDLE / ZOOM / ROTATE badges
 - Open at login, pause from the menu bar, works after sleep and reconnecting
 
 Universal app for Apple Silicon and Intel. Needs macOS 14 or later.
