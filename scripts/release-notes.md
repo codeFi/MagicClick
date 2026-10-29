@@ -1,17 +1,20 @@
 Middle click, left-click-while-right-held, pinch to zoom and rotate for the Apple Magic Mouse.
 
-## New in 1.1.0
+## New in 1.1.1
 
-- **Pinch to zoom:** move two fingers apart or together on the mouse. Apps zoom where the pointer is, like with a trackpad pinch.
-- **Rotate:** turn two fingers on the mouse to rotate maps, photos and PDFs.
-- The live view shows a **ZOOM** or **ROTATE** badge during the gesture.
-- Both have their own switch in the settings window.
+- **Zoom and rotate no longer fight.** Fingers on the curved mouse change their spacing while they turn, so in 1.1.0 a turn also zoomed and the rotation could spring back. Now MagicClick splits the movement into a spread part and a turn part. The larger part starts first. The other joins only when you clearly do it too.
+- **Zoom and rotate together**, like on the trackpad: turn and spread at the same time.
+- Distances and angles use the real size of the touch surface.
+- The live view shows **ZOOM + ROTATE** when both run.
+- Fixed a crash that could happen if the mouse reported the same finger twice.
 
-**Updating from 1.0.0?** Quit MagicClick, replace the app, and do the first-open steps again. Then go to **System Settings → Privacy & Security → Accessibility**, remove MagicClick with **–**, and turn it on again. See [README → Updating](https://github.com/codeFi/MagicClick#updating).
+1.1.0 added **pinch to zoom** and **rotate** with two fingers, at the pointer.
+
+**Updating?** Quit MagicClick, replace the app, and do the first-open steps again. Then go to **System Settings → Privacy & Security → Accessibility**, remove MagicClick with **–**, and turn it on again. See [README → Updating](https://github.com/codeFi/MagicClick#updating).
 
 ## Install
 
-1. Download **MagicClick-1.1.0.dmg** below.
+1. Download **MagicClick-1.1.1.dmg** below.
 2. Open it and drag **MagicClick** into **Applications**.
 3. Open MagicClick. macOS blocks it the first time, because the app is not notarized. Click **Done**.
 4. Go to **System Settings → Privacy & Security**, scroll to **Security**, and click **Open Anyway** next to *"MagicClick" was blocked*. Enter your password and click **Open Anyway** again.

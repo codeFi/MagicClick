@@ -24,7 +24,7 @@ struct LiveSnapshot: Equatable {
     var touches: [Touch] = []
     var rightHeld = false
     var chordActive = false
-    var gesture: GestureKind?
+    var gestures: Set<GestureKind> = []
 }
 
 private let eventTapCallback: CGEventTapCallBack = { _, type, event, _ in
@@ -81,7 +81,8 @@ final class Engine {
         var clicked = false
     }
 
-    /// Two fingers on the mouse that may become a zoom or a rotation.
+    /// Two fingers on the mouse that may zoom, rotate, or both at once, like on the trackpad.
+    /// Positions are in surface widths, so a turn does not look like a change in distance.
     private struct Pinch {
         let ids: [Int32]
         var origins: [Int32: (x: Float, y: Float)]
@@ -89,11 +90,18 @@ final class Engine {
         var lastDistance: Float
         var startAngle: Float
         var lastAngle: Float
-        /// Nil until the fingers move enough. Then it stays the same until a finger lifts.
-        var kind: GestureKind?
+        /// Each one starts when the fingers pass its own threshold, and runs until a finger lifts.
+        var zooming = false
+        var rotating = false
         /// Set when the fingers slide the same way or a button is down. Then it never becomes a gesture.
         var blocked = false
-        var active: Bool { kind != nil }
+        var active: Bool { zooming || rotating }
+        var kinds: Set<GestureKind> {
+            var kinds: Set<GestureKind> = []
+            if zooming { kinds.insert(.zoom) }
+            if rotating { kinds.insert(.rotate) }
+            return kinds
+        }
     }
 
     // Private CGEvent fields for trackpad gestures, as the trackpad driver sends them.
@@ -105,14 +113,15 @@ final class Engine {
     private static let hidZoomType: Int64 = 8
     private static let hidRotationType: Int64 = 5
     private enum GesturePhase: Int64 { case began = 1, changed = 2, ended = 4 }
-    /// How much the fingers must move apart or together before the zoom starts.
-    private static let pinchThreshold: Float = 0.06
     /// Converts the change in finger distance to the zoom amount macOS expects.
     private static let pinchGain = 1.5
-    /// How far the fingers must turn, in degrees, before the rotation starts.
-    private static let rotateThreshold: Float = 15
-    /// How far each finger must travel along the turn, so close fingers that wiggle do not rotate.
-    private static let rotateTravel: Float = 0.05
+    /// How far the fingers must move, in surface widths (about 4 mm on a Magic Mouse), before a gesture starts.
+    private static let gestureStart: Float = 0.08
+    /// The second gesture joins only when its movement is at least this part of the first one's,
+    /// and at least `joinMinimum`. Fingers on a curved mouse change their spacing while they turn,
+    /// so without this a turn would also zoom.
+    private static let joinRatio: Float = 0.5
+    private static let joinMinimum: Float = 0.15
 
     var isTapRunning: Bool { tap != nil }
 
@@ -328,7 +337,8 @@ final class Engine {
 
     // MARK: Multitouch
 
-    func handleFrame(device: MTDeviceRef, isMouse: Bool, touches: [Touch]) {
+    /// `aspect` is the surface height divided by its width, so distances and angles match the real surface.
+    func handleFrame(device: MTDeviceRef, isMouse: Bool, aspect: Float = 1, touches: [Touch]) {
         var actions: [() -> Void] = []
         var live: LiveSnapshot?
         let now = ProcessInfo.processInfo.systemUptime
@@ -362,7 +372,7 @@ final class Engine {
 
             if isMouse {
                 if config.enabled, config.pinchZoom || config.rotate {
-                    trackPinch(touches: touches, now: now, config: config, actions: &actions)
+                    trackPinch(touches: touches, aspect: aspect, now: now, config: config, actions: &actions)
                 } else {
                     endPinch(now: now, actions: &actions)
                 }
@@ -375,7 +385,7 @@ final class Engine {
             if liveEnabled, isMouse, now - lastLiveSend > 1.0 / 30 || touches.isEmpty {
                 lastLiveSend = now
                 live = LiveSnapshot(touches: touches, rightHeld: rightHeld, chordActive: chordFinger != nil,
-                                    gesture: pinch?.kind)
+                                    gestures: pinch?.kinds ?? [])
             }
         }
 
@@ -411,40 +421,45 @@ final class Engine {
         gestures[device] = gesture
     }
 
-    /// Two fingers that move apart or together zoom, and two fingers that turn rotate,
-    /// like the same gestures on the trackpad.
-    private func trackPinch(touches: [Touch], now: TimeInterval, config: EngineConfig, actions: inout [() -> Void]) {
+    /// Two fingers that move apart or together zoom, and two fingers that turn rotate.
+    /// Both can run at the same time, like the same gestures on the trackpad.
+    private func trackPinch(touches: [Touch], aspect: Float, now: TimeInterval, config: EngineConfig,
+                            actions: inout [() -> Void]) {
         let ids = touches.map(\.id).sorted()
-        guard touches.count == 2, !rightHeld, chordFinger == nil else {
+        // Two different fingers. A frame that reports one finger twice is skipped instead of trusted.
+        guard touches.count == 2, ids[0] != ids[1], !rightHeld, chordFinger == nil else {
             endPinch(now: now, actions: &actions)
             return
         }
         if pinch?.ids != ids { endPinch(now: now, actions: &actions) }
         // Ordered by finger ID, so the angle does not jump when the fingers cross.
-        let pair = touches.sorted { $0.id < $1.id }
+        let pair = touches.sorted { $0.id < $1.id }.map { (x: $0.x, y: $0.y * aspect) }
         let distance = hypot(pair[0].x - pair[1].x, pair[0].y - pair[1].y)
         let angle = atan2(pair[1].y - pair[0].y, pair[1].x - pair[0].x) * 180 / .pi
         guard var current = pinch else {
             let buttonDown = CGEventSource.buttonState(.combinedSessionState, button: .left)
                 || CGEventSource.buttonState(.combinedSessionState, button: .right)
-            pinch = Pinch(ids: ids, origins: Dictionary(uniqueKeysWithValues: touches.map { ($0.id, ($0.x, $0.y)) }),
-                          startDistance: distance, lastDistance: distance, startAngle: angle, lastAngle: angle,
-                          blocked: buttonDown)
+            let origins = Dictionary(uniqueKeysWithValues: zip(ids, pair).map { ($0, $1) })
+            pinch = Pinch(ids: ids, origins: origins, startDistance: distance, lastDistance: distance,
+                          startAngle: angle, lastAngle: angle, blocked: buttonDown)
             return
         }
         defer { pinch = current }
+        guard !current.blocked else { return }
 
-        guard let kind = current.kind else {
-            guard !current.blocked else { return }
-            let turned = abs(Self.angleDifference(angle, current.startAngle))
-            let zooms = config.pinchZoom && abs(distance - current.startDistance) > Self.pinchThreshold
-            let rotates = config.rotate && turned > Self.rotateThreshold
-                && turned * .pi / 180 * distance / 2 > Self.rotateTravel
-            guard zooms || rotates else { return }
+        // Split the movement into a spread (distance change) and a turn (arc length), both in surface widths.
+        let spread = abs(distance - current.startDistance)
+        let turn = abs(Self.angleDifference(angle, current.startAngle)) * .pi / 180 * (distance + current.startDistance) / 2
+        let canZoom = config.pinchZoom && !current.zooming
+        let canRotate = config.rotate && !current.rotating
+        var zooms = false
+        var rotates = false
+        if !current.active {
+            guard max(spread, turn) > Self.gestureStart else { return }
             // Both fingers sliding the same way is a scroll or a swipe, not a gesture.
-            let moves = touches.map { touch -> (x: Float, y: Float) in
-                let origin = current.origins[touch.id] ?? (touch.x, touch.y)
-                return (touch.x - origin.x, touch.y - origin.y)
+            let moves = zip(ids, pair).map { id, point -> (x: Float, y: Float) in
+                let origin = current.origins[id] ?? point
+                return (point.x - origin.x, point.y - origin.y)
             }
             let lengths = moves.map { hypot($0.x, $0.y) }
             if lengths.allSatisfy({ $0 > 0.02 }),
@@ -452,28 +467,41 @@ final class Engine {
                 current.blocked = true
                 return
             }
-            let started: GestureKind = zooms ? .zoom : .rotate
-            current.kind = started
-            current.lastDistance = distance
-            current.lastAngle = angle
-            actions.append {
-                self.postGesture(started, .began, 0)
-                self.report(started == .zoom ? "Pinch to zoom" : "Rotate")
-            }
-            return
+            // The larger movement starts first.
+            if spread >= turn { zooms = canZoom } else { rotates = canRotate }
+        } else {
+            zooms = canZoom && spread >= max(Self.joinMinimum, Self.joinRatio * turn)
+            rotates = canRotate && turn >= max(Self.joinMinimum, Self.joinRatio * spread)
         }
 
-        switch kind {
-        case .zoom:
+        if current.zooming {
             let amount = Double(distance / current.lastDistance - 1) * Self.pinchGain
-            guard abs(amount) > 0.002 else { return }
+            if abs(amount) > 0.002 {
+                current.lastDistance = distance
+                actions.append { self.postGesture(.zoom, .changed, amount) }
+            }
+        } else if zooms {
+            current.zooming = true
             current.lastDistance = distance
-            actions.append { self.postGesture(.zoom, .changed, amount) }
-        case .rotate:
+            actions.append {
+                self.postGesture(.zoom, .began, 0)
+                self.report("Pinch to zoom")
+            }
+        }
+
+        if current.rotating {
             let degrees = Double(Self.angleDifference(angle, current.lastAngle))
-            guard abs(degrees) > 0.2 else { return }
+            if abs(degrees) > 0.2 {
+                current.lastAngle = angle
+                actions.append { self.postGesture(.rotate, .changed, degrees) }
+            }
+        } else if rotates {
+            current.rotating = true
             current.lastAngle = angle
-            actions.append { self.postGesture(.rotate, .changed, degrees) }
+            actions.append {
+                self.postGesture(.rotate, .began, 0)
+                self.report("Rotate")
+            }
         }
     }
 
@@ -481,10 +509,10 @@ final class Engine {
     private func endPinch(now: TimeInterval, actions: inout [() -> Void]) {
         guard let current = pinch else { return }
         pinch = nil
-        if let kind = current.kind {
-            swallowScrollUntil = now + 2
-            actions.append { self.postGesture(kind, .ended, 0) }
-        }
+        guard current.active else { return }
+        swallowScrollUntil = now + 2
+        let kinds = current.kinds
+        actions.append { kinds.forEach { self.postGesture($0, .ended, 0) } }
     }
 
     /// The shortest turn from `b` to `a`, in degrees from -180 to 180.

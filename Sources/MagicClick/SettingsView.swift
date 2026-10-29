@@ -257,7 +257,8 @@ private struct LivePreview: View {
         var parts = [touches.isEmpty ? "No fingers" : "\(touches.count) finger\(touches.count == 1 ? "" : "s") on the mouse"]
         if model.live.rightHeld { parts.append("right button held") }
         if model.live.chordActive { parts.append("left button pressed") }
-        if let gesture = model.live.gesture { parts.append(gesture == .zoom ? "zooming" : "rotating") }
+        if model.live.gestures.contains(.zoom) { parts.append("zooming") }
+        if model.live.gestures.contains(.rotate) { parts.append("rotating") }
         if !model.live.rightHeld, touches.count >= model.fingerCount { parts.append("a click now is a middle click") }
         return parts.joined(separator: ", ")
     }
@@ -315,7 +316,7 @@ private struct MouseDiagram: View {
             context.stroke(body, with: .color(.secondary.opacity(0.5)), lineWidth: 1.5)
 
             // Join the two fingers, so the zoom or the turn is easy to see.
-            if live.gesture != nil, live.touches.count == 2 {
+            if !live.gestures.isEmpty, live.touches.count == 2 {
                 var link = Path()
                 link.move(to: point(for: live.touches[0], in: size))
                 link.addLine(to: point(for: live.touches[1], in: size))
@@ -334,8 +335,10 @@ private struct MouseDiagram: View {
 
             // Say which buttons are down right now.
             let badgeY = size.height * 0.62
-            if let gesture = live.gesture, let gestureColor {
-                drawBadge(gesture == .zoom ? "ZOOM" : "ROTATE", color: gestureColor, at: CGPoint(x: half, y: badgeY), in: context)
+            if let gestureColor {
+                let names = [live.gestures.contains(.zoom) ? "ZOOM" : nil, live.gestures.contains(.rotate) ? "ROTATE" : nil]
+                drawBadge(names.compactMap { $0 }.joined(separator: " + "), color: gestureColor,
+                          at: CGPoint(x: half, y: badgeY), in: context)
             } else if isMiddle {
                 drawBadge("MIDDLE", color: .purple, at: CGPoint(x: half, y: badgeY), in: context)
             } else {
@@ -358,7 +361,7 @@ private struct MouseDiagram: View {
     }
 
     private var gestureColor: Color? {
-        live.gesture == nil ? nil : .teal
+        live.gestures.isEmpty ? nil : .teal
     }
 
     private func point(for touch: Touch, in size: CGSize) -> CGPoint {

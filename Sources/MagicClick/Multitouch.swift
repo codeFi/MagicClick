@@ -78,14 +78,15 @@ private let frameCallback: MTFrameCallback = { device, contacts, count, _, _ in
 final class Multitouch {
     static let shared = Multitouch()
 
-    /// Called on the multitouch thread for every frame.
-    var onFrame: ((_ device: MTDeviceRef, _ isMouse: Bool, _ touches: [Touch]) -> Void)?
+    /// Called on the multitouch thread for every frame. `aspect` is the surface height divided by its width.
+    var onFrame: ((_ device: MTDeviceRef, _ isMouse: Bool, _ aspect: Float, _ touches: [Touch]) -> Void)?
     /// Called on the main thread when the set of devices changes.
     var onDevicesChanged: ((_ mouseConnected: Bool) -> Void)?
 
     private let lock = NSLock()
     private var devices: [MTDeviceRef] = []
     private var mouseDevices: Set<MTDeviceRef> = []
+    private var aspects: [MTDeviceRef: Float] = [:]
     // Old device lists are kept alive so a late callback never touches freed memory.
     private var retiredLists: [CFArray] = []
     private var currentList: CFArray?
@@ -96,8 +97,8 @@ final class Multitouch {
     var isAvailable: Bool { mtCreateList != nil && mtRegister != nil && mtStart != nil }
 
     func deliver(device: MTDeviceRef, touches: [Touch]) {
-        let isMouse = lock.withLock { mouseDevices.contains(device) }
-        onFrame?(device, isMouse, touches)
+        let (isMouse, aspect) = lock.withLock { (mouseDevices.contains(device), aspects[device] ?? 1) }
+        onFrame?(device, isMouse, aspect, touches)
     }
 
     func start() {
@@ -108,15 +109,20 @@ final class Multitouch {
 
         var found: [MTDeviceRef] = []
         var mice: Set<MTDeviceRef> = []
+        var shapes: [MTDeviceRef: Float] = [:]
         for index in 0..<CFArrayGetCount(list) {
             guard let raw = CFArrayGetValueAtIndex(list, index) else { continue }
             let device = UnsafeMutableRawPointer(mutating: raw)
             found.append(device)
             if Self.isMouse(device) { mice.insert(device) }
+            var width: Int32 = 0, height: Int32 = 0
+            _ = mtDimensions?(device, &width, &height)
+            if width > 0, height > 0 { shapes[device] = Float(height) / Float(width) }
         }
         lock.withLock {
             devices = found
             mouseDevices = mice
+            aspects = shapes
         }
         for device in found {
             mtRegister(device, frameCallback)
@@ -131,6 +137,7 @@ final class Multitouch {
             let old = devices
             devices = []
             mouseDevices = []
+            aspects = [:]
             return old
         }
         for device in old {

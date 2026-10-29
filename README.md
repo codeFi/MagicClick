@@ -54,7 +54,7 @@ Fingers that were already on the mouse when you pressed the right button are ign
 - **Zoom** – Move two fingers apart or together on the mouse, like a pinch on the trackpad. It works in Safari, Preview, Photos, Maps, most browsers and other apps that support trackpad pinch.
 - **Rotate** – Turn two fingers on the mouse, like turning a dial. It works in Maps, Preview, Photos and other apps that support trackpad rotation.
 
-MagicClick sends the same gesture events that a trackpad sends, so apps zoom and rotate **where the pointer is**. A gesture is a zoom or a rotation, not both: the first clear movement decides.
+MagicClick sends the same gesture events that a trackpad sends, so apps zoom and rotate **where the pointer is**. The larger movement decides: a spread zooms, a turn rotates. Spread clearly while you turn to do both at the same time.
 
 Two fingers that slide the same way still scroll or swipe as usual. During a gesture, the mouse does not scroll the page.
 
@@ -172,7 +172,7 @@ MagicClick has four parts:
 1. **Touch reader** (`Multitouch.swift`). It loads Apple's private `MultitouchSupport` framework at run time and gets a callback about 100 times a second with the position of each finger. It tells the Magic Mouse apart from trackpads by the device family ID.
 2. **Event tap** (`Engine.swift`). A `CGEventTap` sees every mouse and keyboard event before apps do. When you press the mouse and 3 or more fingers are on it, the tap changes the event into a middle-button event. When your chosen key goes down or up, the tap removes the key event and sends a middle-button event instead.
 3. **Chord logic** (`Engine.swift`). When the right button goes down, MagicClick remembers which fingers are on the mouse. A *new* finger on the left half sends a left button press. Lifting that finger sends the release.
-4. **Zoom and rotate** (`Engine.swift`). When two fingers move apart or together, MagicClick sends a zoom gesture event at the pointer. When they turn, it sends a rotation gesture event. These are the same private event types that the trackpad driver sends. While a gesture runs, the tap drops the mouse's own scroll events.
+4. **Zoom and rotate** (`Engine.swift`). When two fingers move apart or together, MagicClick sends a zoom gesture event at the pointer. When they turn, it sends a rotation gesture event. MagicClick splits the finger movement into a spread part and a turn part, measured in real surface size. The larger part starts first. The other part joins only when it is at least half as large, because fingers on the curved mouse change their spacing while they turn. These are the same private event types that the trackpad driver sends. While a gesture runs, the tap drops the mouse's own scroll events.
 
 Events that MagicClick sends carry a marker, so its own tap lets them through and never loops.
 
@@ -226,7 +226,7 @@ macOS can freeze input when an app loses Accessibility while its event tap is ac
 
 - The Magic Mouse cannot report a second physical press while the button is down. The chord left click uses a **touch**, not a press, for this reason.
 - Zoom and rotate work only in apps that support the trackpad gestures. Apps that zoom only with `⌘+` and `⌘−` do not respond to them.
-- Rotation starts after the fingers turn about 15°, so small movements of resting fingers do nothing.
+- A gesture starts after the fingers move about 4 mm, so small movements of resting fingers do nothing.
 - For 2 seconds after a zoom or rotation, MagicClick drops leftover scroll momentum. A scroll wheel on another mouse is also ignored in that time.
 - MagicClick uses a private framework, so it can never be on the Mac App Store.
 - The app is not sandboxed. An event tap that changes events cannot run in the App Sandbox.

@@ -30,8 +30,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
 
         let multitouch = Multitouch.shared
-        multitouch.onFrame = { device, isMouse, touches in
-            engine.handleFrame(device: device, isMouse: isMouse, touches: touches)
+        multitouch.onFrame = { device, isMouse, aspect, touches in
+            engine.handleFrame(device: device, isMouse: isMouse, aspect: aspect, touches: touches)
         }
         multitouch.onDevicesChanged = { [model] connected in model.mouseConnected = connected }
         multitouch.start()
@@ -161,7 +161,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     /// Plays a scripted demo in the live view and saves one PNG per step, plus `frames.txt`
     /// with "file<TAB>seconds<TAB>caption" lines. `scripts/make-gif.swift` turns them into a GIF.
     private func renderDemoFrames(to directory: String) {
-        typealias Step = (touches: [Touch], right: Bool, chord: Bool, gesture: GestureKind?, action: String?,
+        typealias Step = (touches: [Touch], right: Bool, chord: Bool, gestures: Set<GestureKind>, action: String?,
                          seconds: Double, caption: String)
         let left = Touch(id: 1, x: 0.24, y: 0.7)
         let top = Touch(id: 2, x: 0.5, y: 0.77)
@@ -182,26 +182,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         func turnA(_ step: Int) -> Touch { turn(200 + 20 * Float(step), id: 7) }
         func turnB(_ step: Int) -> Touch { turn(20 + 20 * Float(step), id: 8) }
         let steps: [Step] = [
-            ([], false, false, nil, nil, 1.2, "MagicClick · the clicks and gestures your Magic Mouse is missing"),
-            ([left], false, false, nil, nil, 0.25, middleCaption),
-            ([left, top], false, false, nil, nil, 0.25, middleCaption),
-            ([left, top, right], false, false, nil, nil, 0.7, middleCaption),
-            ([left, top, right], false, false, nil, "Middle click · 3 fingers", 1.8, "Middle click!"),
-            ([], false, false, nil, nil, 0.6, chordCaption),
-            ([right], false, false, nil, nil, 0.5, chordCaption),
-            ([right], true, false, nil, nil, 0.9, chordCaption),
-            ([chordLeft, right], true, true, nil, "Left click · while right is held", 2.0, "Left and right at the same time!"),
-            ([right], true, false, nil, nil, 0.6, "Lift the finger to release the left button"),
-            ([pinchA(0), pinchB(0)], false, false, nil, nil, 0.7, zoomCaption),
-            ([pinchA(1), pinchB(1)], false, false, .zoom, "Pinch to zoom", 0.3, zoomCaption),
-            ([pinchA(2), pinchB(2)], false, false, .zoom, nil, 0.3, zoomCaption),
-            ([pinchA(3), pinchB(3)], false, false, .zoom, nil, 1.6, "Zoom where the pointer is, like a trackpad"),
-            ([turnA(0), turnB(0)], false, false, nil, nil, 0.7, rotateCaption),
-            ([turnA(1), turnB(1)], false, false, .rotate, "Rotate", 0.3, rotateCaption),
-            ([turnA(2), turnB(2)], false, false, .rotate, nil, 0.3, rotateCaption),
-            ([turnA(3), turnB(3)], false, false, .rotate, nil, 1.6, "Rotate maps, photos and PDFs"),
-            ([], false, false, nil, nil, 0.6, "Or pick any key as the middle button"),
-            ([], false, false, nil, "Middle click · Play/Pause", 1.8, "Or pick any key as the middle button"),
+            ([], false, false, [], nil, 1.2, "MagicClick · the clicks and gestures your Magic Mouse is missing"),
+            ([left], false, false, [], nil, 0.25, middleCaption),
+            ([left, top], false, false, [], nil, 0.25, middleCaption),
+            ([left, top, right], false, false, [], nil, 0.7, middleCaption),
+            ([left, top, right], false, false, [], "Middle click · 3 fingers", 1.8, "Middle click!"),
+            ([], false, false, [], nil, 0.6, chordCaption),
+            ([right], false, false, [], nil, 0.5, chordCaption),
+            ([right], true, false, [], nil, 0.9, chordCaption),
+            ([chordLeft, right], true, true, [], "Left click · while right is held", 2.0, "Left and right at the same time!"),
+            ([right], true, false, [], nil, 0.6, "Lift the finger to release the left button"),
+            ([pinchA(0), pinchB(0)], false, false, [], nil, 0.7, zoomCaption),
+            ([pinchA(1), pinchB(1)], false, false, [.zoom], "Pinch to zoom", 0.3, zoomCaption),
+            ([pinchA(2), pinchB(2)], false, false, [.zoom], nil, 0.3, zoomCaption),
+            ([pinchA(3), pinchB(3)], false, false, [.zoom], nil, 1.6, "Zoom where the pointer is, like a trackpad"),
+            ([turnA(0), turnB(0)], false, false, [], nil, 0.7, rotateCaption),
+            ([turnA(1), turnB(1)], false, false, [.rotate], "Rotate", 0.3, rotateCaption),
+            ([turnA(2), turnB(2)], false, false, [.rotate], nil, 0.3, rotateCaption),
+            ([turnA(3), turnB(3)], false, false, [.rotate], nil, 1.6, "Rotate maps, photos and PDFs"),
+            ([], false, false, [], nil, 0.6, "Or pick any key as the middle button"),
+            ([], false, false, [], "Middle click · Play/Pause", 1.8, "Or pick any key as the middle button"),
         ]
 
         model.persists = false
@@ -222,7 +222,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             }
             let step = steps[index]
             model.live = LiveSnapshot(touches: step.touches, rightHeld: step.right, chordActive: step.chord,
-                                      gesture: step.gesture)
+                                      gestures: step.gestures)
             if let action = step.action { model.showAction(action) }
             // Wait for SwiftUI to update and the "last action" animation to settle.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
