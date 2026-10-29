@@ -284,7 +284,7 @@ private struct LegendRow: View {
 }
 
 /// A top-down Magic Mouse with the fingers drawn where they touch.
-private struct MouseDiagram: View {
+struct MouseDiagram: View {
     let live: LiveSnapshot
     let middleCount: Int
 
