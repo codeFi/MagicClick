@@ -42,6 +42,8 @@ SIGN_IDENTITY="Apple Development: Your Name (TEAMID)" ./scripts/build.sh install
 | --- | --- |
 | `Multitouch.swift` | Reads finger positions from the private MultitouchSupport framework |
 | `Engine.swift` | Event tap: middle click, chord click, key trigger, zoom and rotate |
+| `Spotlight.swift` | Spotlight and ring around the pointer, click pulse, one window per display |
+| `WindowShot.swift` | Screenshot of one window with the spotlight, through ScreenCaptureKit |
 | `KeyTrigger.swift` | Keyboard trigger model and key names |
 | `AppModel.swift` | Saved settings and live status |
 | `AppDelegate.swift` | Menu bar item, settings window, screenshot and demo modes |
@@ -65,16 +67,34 @@ There are no automated tests for the event tap, because it needs a real mouse an
 - [ ] A 3-finger click gives a middle click (open a link in a browser: it should open in a new tab)
 - [ ] Hold right, touch the left half: the live view shows **LEFT** and **RIGHT**
 - [ ] Two fingers apart or together zoom in Safari or Preview, at the pointer. Two fingers sliding the same way still scroll.
+- [ ] The spotlight follows the pointer on every display, pulses on each click, and turns on and off with its keys.
+- [ ] With the spotlight on, `⌘⇧3`, `⌘⇧4` (area and one window) and `⌘⇧5` recordings work. The window screenshot key saves the window with the spotlight.
 - [ ] Two fingers that turn rotate the map in Maps
 - [ ] The keyboard key works, if your change touches it
 - [ ] Turning MagicClick off in the menu bar gives the normal mouse behavior back
 
-If you change the settings window, add a new screenshot:
+If you change the settings window, make new screenshots. Each command renders one part of the window, then puts it on the background:
 
 ```bash
-./scripts/build.sh
-build/MagicClick.app/Contents/MacOS/MagicClick --snapshot docs/screenshot.png --demo middle
+swift build
+.build/debug/MagicClick --snapshot build/shot-top.png --demo all --height 728
+.build/debug/MagicClick --snapshot build/shot-gestures.png --demo chord --height 530 --scroll 655
+.build/debug/MagicClick --snapshot build/shot-spotlight.png --demo all --height 800 --scroll 1140
+swift scripts/make-screenshot.swift build/shot-top.png docs/screenshot.png
+swift scripts/make-screenshot.swift build/shot-gestures.png docs/screenshot-gestures.png 530
+swift scripts/make-screenshot.swift build/shot-spotlight.png docs/screenshot-spotlight.png
 ```
+
+The `--scroll` values move with the content. Look at the pictures, and change the values if a section is cut.
+
+To make the showcase GIF, record the whole screen with `⌘⇧5` while you use the spotlight. Put the times you want in `scripts/showcase-clips.txt`. Then:
+
+```bash
+.build/debug/MagicClick --gesture-frames build/gesture-frames
+swift scripts/make-maps-gif.swift build/gesture-frames docs/demo.gif --movie <your recording.mov> --clips scripts/showcase-clips.txt --mp4 build/MagicClick-showcase.mp4
+```
+
+Keep the GIF under 10 MB. The MP4 is not part of the repo. Attach it to the release or post it.
 
 ### Send a pull request
 

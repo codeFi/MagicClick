@@ -8,6 +8,8 @@ struct KeyTrigger: Codable, Equatable {
         case key
         /// A modifier key pressed on its own (for example Right ⌥ Option or fn).
         case modifier
+        /// Two or three modifier keys pressed together, on either side of the keyboard (for example ⌃⌥ or ⌃⌥⌘).
+        case modifiers
         /// A media or special key (for example Play/Pause or Volume Up).
         case media
     }
@@ -18,6 +20,8 @@ struct KeyTrigger: Codable, Equatable {
     var name: String
 
     static let modifierMask: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl, .maskShift]
+    /// The modifiers a combination of modifier keys can use.
+    static let comboMask: CGEventFlags = modifierMask.union(.maskSecondaryFn)
 
     static func key(code: Int, flags: CGEventFlags) -> KeyTrigger {
         let mods = flags.intersection(modifierMask)
@@ -26,6 +30,13 @@ struct KeyTrigger: Codable, Equatable {
 
     static func modifier(code: Int) -> KeyTrigger {
         KeyTrigger(kind: .modifier, code: code, modifiers: 0, name: modifierNames[code] ?? "Modifier \(code)")
+    }
+
+    /// `codes` are the modifier keys that were down together.
+    static func modifiers(codes: Set<Int>) -> KeyTrigger {
+        let flags = codes.reduce(CGEventFlags()) { $0.union(modifierFlags[$1] ?? []) }
+        let name = symbols(for: flags) + (flags.contains(.maskSecondaryFn) ? " fn" : "")
+        return KeyTrigger(kind: .modifiers, code: 0, modifiers: flags.rawValue, name: name)
     }
 
     static func media(code: Int) -> KeyTrigger {

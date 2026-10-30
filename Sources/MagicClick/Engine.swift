@@ -14,7 +14,16 @@ struct EngineConfig: Equatable {
     var chord = true
     var pinchZoom = true
     var rotate = true
+    /// Turns the spotlight on or off.
+    var spotlightToggle: KeyTrigger?
+    /// Shows the spotlight while it is held.
+    var spotlightHold: KeyTrigger?
+    /// Saves the window under the pointer with the spotlight.
+    var windowShot: KeyTrigger?
 }
+
+/// A spotlight key the user pressed or released.
+enum SpotlightKey { case toggle, hold(Bool), windowShot }
 
 /// A two-finger gesture that MagicClick sends as a trackpad gesture.
 enum GestureKind { case zoom, rotate }
@@ -29,6 +38,7 @@ struct LiveSnapshot: Equatable {
 
 private let eventTapCallback: CGEventTapCallBack = { _, type, event, _ in
     guard let result = Engine.shared.handle(type, event) else { return nil }
+    if Engine.shared.onEvent?(result) == false { return nil }
     return Unmanaged.passUnretained(result)
 }
 
@@ -46,6 +56,11 @@ final class Engine {
     var onAction: ((String) -> Void)?
     /// Called on the main thread about 30 times a second while live updates are on.
     var onLive: ((LiveSnapshot) -> Void)?
+    /// Called on the main thread when a spotlight key goes down or up.
+    var onSpotlightKey: ((SpotlightKey) -> Void)?
+    /// Called on the main thread with each event the tap lets through, after any change. The spotlight follows the pointer
+    /// with it. Return false to drop the event.
+    var onEvent: ((CGEvent) -> Bool)?
     /// Non-nil while the settings window waits for a key. Called on the main thread.
     private(set) var recorder: ((KeyTrigger?) -> Void)?
 
@@ -67,7 +82,12 @@ final class Engine {
     private var tap: CFMachPort?
     private var convertedButton: CGMouseButton?
     private var keyMiddleDown = false
-    private var recordModifier: Int?
+    private var spotlightToggleDown = false
+    private var spotlightHoldDown = false
+    private var windowShotDown = false
+    /// While recording: the modifier keys down now, and all that were down together since the last release.
+    private var recordHeld: Set<Int> = []
+    private var recordPeak: Set<Int> = []
     private var swallowKeyUp: Int?
 
     private let source = CGEventSource(stateID: .hidSystemState)
@@ -136,6 +156,12 @@ final class Engine {
         if keyMiddleDown, !newConfig.enabled || newConfig.trigger != old.trigger {
             pressMiddle(false, trigger: old.trigger)
         }
+        if newConfig.spotlightToggle != old.spotlightToggle { spotlightToggleDown = false }
+        if newConfig.windowShot != old.windowShot { windowShotDown = false }
+        if spotlightHoldDown, newConfig.spotlightHold != old.spotlightHold {
+            spotlightHoldDown = false
+            onSpotlightKey?(.hold(false))
+        }
     }
 
     func setLiveUpdates(_ on: Bool) {
@@ -167,7 +193,8 @@ final class Engine {
     // MARK: Key recording
 
     func startRecording(_ completion: @escaping (KeyTrigger?) -> Void) {
-        recordModifier = nil
+        recordHeld = []
+        recordPeak = []
         recorder = completion
     }
 
@@ -178,7 +205,8 @@ final class Engine {
     private func finishRecording(_ trigger: KeyTrigger?) {
         let completion = recorder
         recorder = nil
-        recordModifier = nil
+        recordHeld = []
+        recordPeak = []
         completion?(trigger)
     }
 
@@ -201,10 +229,12 @@ final class Engine {
             let code = Self.keyCode(event)
             guard let bit = KeyTrigger.modifierBits[code] else { return true }
             if event.flags.rawValue & bit != 0 {
-                recordModifier = code
-            } else if recordModifier == code {
-                // Released without another key: the modifier on its own is the trigger.
-                finishRecording(.modifier(code: code))
+                recordHeld.insert(code)
+                recordPeak.insert(code)
+            } else if recordHeld.remove(code) != nil, recordHeld.isEmpty {
+                // All released without another key: the modifier, or the modifiers together, are the trigger.
+                let peak = recordPeak
+                finishRecording(peak.count == 1 ? .modifier(code: code) : .modifiers(codes: peak))
             }
             return true
         default:
@@ -229,6 +259,11 @@ final class Engine {
         }
 
         let config = lock.withLock { self.config }
+        if spotlightKeyEvent(type, event, config) { return nil }
+        // A modifier that holds the spotlight must not turn a click into an ⌥-click or a ⌘-click.
+        if spotlightHoldDown, Self.mouseTypes.contains(type) {
+            event.flags = event.flags.subtracting(Self.hiddenFlags(config.spotlightHold))
+        }
         guard config.enabled else { return event }
 
         switch type {
@@ -260,9 +295,9 @@ final class Engine {
         case .scrollWheel:
             return scrollEvent(event)
         case .keyDown, .keyUp, .flagsChanged:
-            return keyEvent(type, event, config)
+            return middleKeyEvent(type, event, config)
         default:
-            return type.rawValue == 14 ? mediaEvent(event, config) : event
+            return type.rawValue == 14 ? middleKeyEvent(type, event, config) : event
         }
     }
 
@@ -300,32 +335,28 @@ final class Engine {
         }
     }
 
-    private func keyEvent(_ type: CGEventType, _ event: CGEvent, _ config: EngineConfig) -> CGEvent? {
-        guard let trigger = config.trigger else { return event }
-        let code = Self.keyCode(event)
-        guard code == trigger.code else { return event }
-        switch (type, trigger.kind) {
-        case (.keyDown, .key):
-            guard event.flags.intersection(KeyTrigger.modifierMask).rawValue == trigger.modifiers else { return event }
-            if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 { pressMiddle(true, trigger: trigger) }
-            return nil
-        case (.keyUp, .key) where keyMiddleDown:
-            pressMiddle(false, trigger: trigger)
-            return nil
-        case (.flagsChanged, .modifier):
-            guard let bit = KeyTrigger.modifierBits[code] else { return event }
-            pressMiddle(event.flags.rawValue & bit != 0, trigger: trigger)
-            return nil
-        default:
-            return event
-        }
+    /// The key that holds the middle button. Returns nil to swallow the key.
+    private func middleKeyEvent(_ type: CGEventType, _ event: CGEvent, _ config: EngineConfig) -> CGEvent? {
+        guard let trigger = config.trigger, let down = Self.press(of: trigger, type, event) else { return event }
+        // A release we never saw go down belongs to someone else.
+        if !down, !keyMiddleDown { return event }
+        pressMiddle(down, trigger: trigger)
+        return nil
     }
 
-    private func mediaEvent(_ event: CGEvent, _ config: EngineConfig) -> CGEvent? {
-        guard let trigger = config.trigger, trigger.kind == .media,
-              let media = Self.mediaKey(event), media.code == trigger.code else { return event }
-        pressMiddle(media.down, trigger: trigger)
-        return nil
+    /// The keys that show the spotlight. They work even while MagicClick is paused. Returns true to swallow the key.
+    private func spotlightKeyEvent(_ type: CGEventType, _ event: CGEvent, _ config: EngineConfig) -> Bool {
+        if let swallow = pressKey(config.spotlightToggle, type, event, held: &spotlightToggleDown, .toggle) { return swallow }
+        if let swallow = pressKey(config.windowShot, type, event, held: &windowShotDown, .windowShot) { return swallow }
+        if let trigger = config.spotlightHold, let down = Self.press(of: trigger, type, event) {
+            if !down, !spotlightHoldDown { return false }
+            if down != spotlightHoldDown {
+                spotlightHoldDown = down
+                onSpotlightKey?(.hold(down))
+            }
+            return true
+        }
+        return false
     }
 
     private func pressMiddle(_ down: Bool, trigger: KeyTrigger?) {
@@ -578,6 +609,51 @@ final class Engine {
         }
     }
 
+    /// A key that acts once when it goes down. Returns nil when the event is another key, else whether to swallow it.
+    private func pressKey(_ trigger: KeyTrigger?, _ type: CGEventType, _ event: CGEvent, held: inout Bool,
+                          _ key: SpotlightKey) -> Bool? {
+        guard let trigger, let down = Self.press(of: trigger, type, event) else { return nil }
+        if !down, !held { return false }
+        if down, !held { onSpotlightKey?(key) }
+        held = down
+        return true
+    }
+
+    private static let mouseTypes: Set<CGEventType> = [
+        .leftMouseDown, .leftMouseUp, .leftMouseDragged, .rightMouseDown, .rightMouseUp, .rightMouseDragged,
+        .otherMouseDown, .otherMouseUp, .otherMouseDragged, .mouseMoved, .scrollWheel,
+    ]
+
+    /// True when `event` presses `trigger`, false when it releases it, and nil when it is another key.
+    /// A key with modifiers goes down only with exactly those modifiers. Auto-repeat counts as down again.
+    private static func press(of trigger: KeyTrigger, _ type: CGEventType, _ event: CGEvent) -> Bool? {
+        if type.rawValue == 14 {
+            guard trigger.kind == .media, let media = mediaKey(event), media.code == trigger.code else { return nil }
+            return media.down
+        }
+        if trigger.kind == .modifiers {
+            // Down while exactly these modifiers are down, on either side.
+            guard type == .flagsChanged else { return nil }
+            guard event.flags.intersection(KeyTrigger.comboMask).rawValue == trigger.modifiers else { return false }
+            // Only a key going down completes it. Letting go of ⌘ from ⌃⌥⌘ does not count as ⌃⌥ again.
+            guard let bit = KeyTrigger.modifierBits[keyCode(event)], event.flags.rawValue & bit != 0 else { return nil }
+            return true
+        }
+        guard keyCode(event) == trigger.code else { return nil }
+        switch (type, trigger.kind) {
+        case (.keyDown, .key):
+            guard event.flags.intersection(KeyTrigger.modifierMask).rawValue == trigger.modifiers else { return nil }
+            return true
+        case (.keyUp, .key):
+            return false
+        case (.flagsChanged, .modifier):
+            guard let bit = KeyTrigger.modifierBits[trigger.code] else { return nil }
+            return event.flags.rawValue & bit != 0
+        default:
+            return nil
+        }
+    }
+
     private static func keyCode(_ event: CGEvent) -> Int {
         Int(event.getIntegerValueField(.keyboardEventKeycode))
     }
@@ -588,6 +664,7 @@ final class Engine {
         switch trigger.kind {
         case .key: return CGEventFlags(rawValue: trigger.modifiers)
         case .modifier: return KeyTrigger.modifierFlags[trigger.code] ?? []
+        case .modifiers: return CGEventFlags(rawValue: trigger.modifiers)
         case .media: return []
         }
     }

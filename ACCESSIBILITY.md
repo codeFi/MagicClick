@@ -24,6 +24,7 @@ MagicClick exists to make the Magic Mouse easier to use. We want it to work for 
 | Left click while right is held | Hold right, touch the left half | Use a mouse with two physical buttons. MagicClick does not get in the way. |
 | Zoom | Move two fingers apart or together | Use `⌘+` and `⌘−`, or the app's View menu. You can turn **Pinch to zoom** off. |
 | Rotate | Turn two fingers | Use the app's rotate command, for example `⌘R` in Preview. You can turn **Rotate** off. |
+| Spotlight | None needed | Turn it on in Settings or in the menu bar menu, or with an **On/off key** or a **Hold key**. The pulse colors are a help only: the pulse shows on every click. |
 
 With **Number of fingers** you can choose 2, 3 or 4 fingers. Fewer fingers is easier to do. More fingers gives fewer accidental clicks.
 

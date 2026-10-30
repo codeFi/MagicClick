@@ -33,6 +33,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         engine.onLive = { [model] snapshot in
             if model.live != snapshot { model.live = snapshot }
         }
+        let spotlight = Spotlight.shared
+        spotlight.apply(model.spotlight)
+        engine.onEvent = { event in spotlight.handle(event) }
+        engine.onSpotlightKey = { [model] key in
+            switch key {
+            case .toggle: model.spotlightOn.toggle()
+            case .hold(let down): spotlight.setHeld(down)
+            case .windowShot: WindowShot.capture()
+            }
+        }
+        WindowShot.onResult = { [model] text in model.showAction(text) }
 
         let multitouch = Multitouch.shared
         multitouch.onFrame = { device, isMouse, aspect, touches in
@@ -98,6 +109,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         toggle.state = model.enabled ? .on : .off
         menu.addItem(toggle)
 
+        let spotlight = NSMenuItem(title: "Spotlight", action: #selector(toggleSpotlight), keyEquivalent: "")
+        spotlight.target = self
+        spotlight.state = model.spotlightOn ? .on : .off
+        menu.addItem(spotlight)
+
         let settings = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(settings)
@@ -109,6 +125,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     @objc private func toggleEnabled() {
         model.enabled.toggle()
         statusItem?.button?.appearsDisabled = !model.enabled
+    }
+
+    @objc private func toggleSpotlight() {
+        model.spotlightOn.toggle()
     }
 
     @objc private func openSettings() {
@@ -136,8 +156,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     /// Renders the settings window to a PNG and quits. Used for the README screenshot.
-    /// `--demo middle` shows a 3-finger middle click, `--demo chord` a left click while right is held.
-    /// Both also show a granted permission.
+    /// `--demo middle` shows a 3-finger middle click, `--demo chord` a left click while right is held, and `--demo all`
+    /// a middle click plus example spotlight keys. All show a granted permission.
     private func snapshot(to path: String, demo: String?) {
         model.persists = false
         if let demo {
@@ -155,11 +175,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 model.showAction("Middle click · 3 fingers")
             }
         }
+        if demo == "all" {
+            // Example keys for the spotlight, so the screenshot shows filled-in rows. Nothing is saved.
+            model.spotlightOn = true
+            model.spotlightToggle = .key(code: 97, flags: [])
+            model.spotlightHold = .modifiers(codes: [59, 58])
+            model.windowShotKey = .key(code: 1, flags: [.maskControl, .maskCommand])
+        }
         showSettings()
-        window?.setContentSize(NSSize(width: 580, height: 1240))
+        // `--height` makes the window taller, to show more sections in one picture.
+        let arguments = CommandLine.arguments
+        let height = arguments.firstIndex(of: "--height").flatMap { $0 + 1 < arguments.count ? Double(arguments[$0 + 1]) : nil } ?? 1240
+        window?.setContentSize(NSSize(width: 580, height: height))
+        // `--scroll` starts the picture this many points down the settings.
+        let scroll = arguments.firstIndex(of: "--scroll").flatMap { $0 + 1 < arguments.count ? Double(arguments[$0 + 1]) : nil }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            self?.writeWindowImage(to: path)
-            NSApp.terminate(nil)
+            if let scroll { self?.scroll(self?.window?.contentView, to: scroll) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                self?.writeWindowImage(to: path)
+                NSApp.terminate(nil)
+            }
         }
     }
 
@@ -244,6 +279,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
     }
 
+    private func scroll(_ view: NSView?, to y: Double) {
+        guard let view else { return }
+        if let scrollView = view as? NSScrollView, let document = scrollView.documentView {
+            let top = document.isFlipped ? y : document.bounds.maxY - y - scrollView.contentView.bounds.height
+            scrollView.contentView.scroll(to: NSPoint(x: 0, y: top))
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+            // The scroller would show in the picture after a scroll.
+            scrollView.verticalScroller?.alphaValue = 0
+            return
+        }
+        view.subviews.forEach { scroll($0, to: y) }
+    }
+
     private func scrollToTop(_ view: NSView?) {
         guard let view else { return }
         if let scrollView = view as? NSScrollView, let document = scrollView.documentView {
@@ -255,15 +303,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     /// Draws the mouse for a scripted demo of every feature and saves one PNG per step, plus `frames.txt` with
-    /// "file<TAB>seconds<TAB>caption<TAB>zoom<TAB>heading<TAB>card" lines. Zoom 1 is the starting map scale and heading
-    /// is the map rotation in degrees. Click scenes name a card PNG for the right side instead of a map.
-    /// `scripts/make-maps-gif.swift` puts it together.
+    /// "file<TAB>seconds<TAB>caption<TAB>zoom<TAB>heading<TAB>card<TAB>chapter" lines. Zoom 1 is the starting map scale and
+    /// heading is the map rotation in degrees. Click scenes name a card PNG for the right side instead of a map, and wide
+    /// cards (title, spotlight tools, end) fill the frame. A line that starts with "@clips" marks where the spotlight
+    /// clips from a screen recording go. `scripts/make-maps-gif.swift` puts it together.
     private func renderGestureFrames(to directory: String) {
         struct Card { var symbol: String; var title: String; var lines: [String]; var key: String? }
         struct Step {
             var touches: [Touch] = []; var right = false; var chord = false; var gestures: Set<GestureKind> = []
             var action: String?; var seconds: Double; var caption: String
             var zoom = 1.0; var heading = 0.0; var card: Card?; var active = false
+            var chapter = 0; var wide: DemoWideCard.Kind?; var clips = false
         }
         // Two fingers on a circle around the middle of the mouse. The drawing is 1.75 times taller than wide,
         // so a real circle needs a smaller radius in y.
@@ -282,19 +332,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                               lines: ["Open links in a new tab", "Close tabs with one click", "Pan in Blender, CAD and 3D apps"])
         let chordCard = Card(symbol: "gamecontroller.fill", title: "Left + right click together",
                              lines: ["Hold right, touch the left half", "For games and pro apps", "Left stays down until you lift"])
+        let tapCard = Card(symbol: "hand.tap.fill", title: "Tap instead of press",
+                           lines: ["Tap 3 fingers, no press needed", "Choose 2, 3 or 4 fingers", "Works on the trackpad too"])
         let keyCard = Card(symbol: "keyboard", title: "Any key as the middle button",
-                           lines: ["F-keys, media keys and fn", "Right ⌘ ⌥ ⌃ ⇧ on their own", "Hold the key to middle-drag"],
+                           lines: ["F-keys, media keys and fn", "Up to 3 keys together, like ⌃⌥M", "Hold the key to middle-drag"],
                            key: "⏯  Play/Pause")
+        let buttonCard = Card(symbol: "computermouse", title: "Side buttons on other mice",
+                              lines: ["Button 4 or 5 as the middle button", "Hold it to middle-drag"])
         let middleCaption = "Rest 3 fingers on the mouse and click"
+        let tapCaption = "Or just tap 3 fingers, no press"
         let chordCaption = "Hold the right click, touch the left half"
         let keyCaption = "Or pick any key as the middle button"
+        let buttonCaption = "Side buttons on other mice work too"
 
         var steps: [Step] = [
-            Step(seconds: 1.6, caption: "The clicks and gestures your Magic Mouse is missing"),
+            Step(seconds: 2.6, caption: "Meet MagicClick", wide: .intro),
             Step(touches: [left], seconds: 0.25, caption: middleCaption, card: middleCard),
             Step(touches: [left, top], seconds: 0.25, caption: middleCaption, card: middleCard),
             Step(touches: [left, top, right], seconds: 0.7, caption: middleCaption, card: middleCard),
             Step(touches: [left, top, right], action: "Middle click", seconds: 1.8, caption: "Middle click!", card: middleCard, active: true),
+            Step(seconds: 0.5, caption: tapCaption, card: tapCard),
+            Step(touches: [left, top, right], seconds: 0.2, caption: tapCaption, card: tapCard),
+            Step(action: "Middle click · tap", seconds: 1.6, caption: tapCaption, card: tapCard, active: true),
             Step(seconds: 0.5, caption: chordCaption, card: chordCard),
             Step(touches: [right], seconds: 0.5, caption: chordCaption, card: chordCard),
             Step(touches: [right], right: true, seconds: 0.9, caption: chordCaption, card: chordCard),
@@ -303,6 +362,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             Step(touches: [right], right: true, seconds: 0.6, caption: "Lift the finger to release the left button", card: chordCard),
             Step(seconds: 0.7, caption: keyCaption, card: keyCard),
             Step(action: "Middle click", seconds: 1.8, caption: keyCaption, card: keyCard, active: true),
+            Step(seconds: 0.6, caption: buttonCaption, card: buttonCard),
+            Step(action: "Middle click · button 4", seconds: 1.5, caption: buttonCaption, card: buttonCard, active: true),
             Step(seconds: 1.2, caption: "And trackpad gestures, right where the pointer is"),
             Step(touches: fingers(30, 0.12), seconds: 0.5, caption: "Spread two fingers to zoom in"),
         ]
@@ -329,7 +390,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                               seconds: 0.07, caption: "Zoom and rotate at the same time", zoom: 3.5 * pow(1 / 3.5, t), heading: 70 * (1 - t)))
         }
         steps[steps.count - 1].seconds = 1.2
-        steps.append(Step(action: "Zoom + rotate", seconds: 1.6, caption: "MagicClick · free & open source"))
+        steps.append(Step(action: "Zoom + rotate", seconds: 1.2, caption: "Zoom and rotate at the same time"))
+        // Chapters for the footer: 1 middle click, 2 left + right, 3 keys, 4 zoom and rotate, 5 spotlight.
+        var chapter = 0
+        for index in steps.indices {
+            switch steps[index].caption {
+            case middleCaption: chapter = max(chapter, 1)
+            case chordCaption: chapter = max(chapter, 2)
+            case keyCaption: chapter = max(chapter, 3)
+            case "And trackpad gestures, right where the pointer is": chapter = max(chapter, 4)
+            default: break
+            }
+            steps[index].chapter = chapter
+        }
+        steps.append(Step(seconds: 0, caption: "", chapter: 5, clips: true))
+        steps.append(Step(seconds: 3.4, caption: "Made for demos, recordings and calls", chapter: 5, wide: .spotlight))
+        steps.append(Step(seconds: 3.2, caption: "Get it free on GitHub", wide: .outro))
 
         try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
         @MainActor func write<Content: View>(_ view: Content, to file: String) -> Bool {
@@ -342,6 +418,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         var manifest = ""
         NSAppearance(named: .darkAqua)?.performAsCurrentDrawingAppearance {
             for (index, step) in steps.enumerated() {
+                if step.clips {
+                    manifest += "@clips\t0\t\t1\t0\t\t\(step.chapter)\n"
+                    continue
+                }
                 let live = LiveSnapshot(touches: step.touches, rightHeld: step.right, chordActive: step.chord, gestures: step.gestures)
                 let panel = VStack(spacing: 18) {
                     MouseDiagram(live: live, middleCount: 3)
@@ -356,12 +436,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 let file = String(format: "gesture-%02d.png", index)
                 guard write(panel, to: file) else { continue }
                 var cardFile = ""
-                if let card = step.card {
+                if let wide = step.wide {
+                    cardFile = String(format: "wide-%02d.png", index)
+                    if !write(DemoWideCard(kind: wide), to: cardFile) { cardFile = "" }
+                } else if let card = step.card {
                     cardFile = String(format: "card-%02d.png", index)
                     let view = DemoCard(symbol: card.symbol, title: card.title, lines: card.lines, key: card.key, active: step.active)
                     if !write(view, to: cardFile) { cardFile = "" }
                 }
-                manifest += "\(file)\t\(step.seconds)\t\(step.caption)\t\(step.zoom)\t\(step.heading)\t\(cardFile)\n"
+                manifest += "\(file)\t\(step.seconds)\t\(step.caption)\t\(step.zoom)\t\(step.heading)\t\(cardFile)\t\(step.chapter)\n"
             }
         }
         try? manifest.write(toFile: (directory as NSString).appendingPathComponent("frames.txt"), atomically: true, encoding: .utf8)
@@ -381,47 +464,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     func windowWillClose(_ notification: Notification) {
         Engine.shared.setLiveUpdates(false)
-        if model.isRecording { model.cancelRecording() }
+        if model.recording != nil { model.cancelRecording() }
         statusItem?.button?.appearsDisabled = !model.enabled
-    }
-}
-
-/// The right side of a click scene in the demo GIF: what the click is good for.
-private struct DemoCard: View {
-    let symbol: String
-    let title: String
-    let lines: [String]
-    let key: String?
-    let active: Bool
-
-    var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: symbol)
-                .font(.system(size: 60, weight: .semibold))
-                .foregroundStyle(active ? Color.yellow : Color.white.opacity(0.85))
-            if let key {
-                Text(key)
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 10)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(active ? 0.3 : 0.12)))
-            }
-            Text(title)
-                .font(.system(size: 30, weight: .bold))
-                .foregroundStyle(.white)
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(lines, id: \.self) { line in
-                    HStack(spacing: 10) {
-                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                        Text(line).foregroundStyle(Color.white.opacity(0.85))
-                    }
-                    .font(.system(size: 19, weight: .medium))
-                }
-            }
-        }
-        .frame(width: 624, height: 464)
-        .background(RoundedRectangle(cornerRadius: 16).fill(Color(white: 0.17)))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(active ? Color.yellow : Color.clear, lineWidth: 3))
     }
 }

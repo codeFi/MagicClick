@@ -52,7 +52,8 @@ struct SettingsView: View {
             }
 
             Section {
-                KeyRecorderRow()
+                KeyRecorderRow(role: .middle, title: "Keyboard key",
+                               detail: "Hold the key to hold the middle button. Use one key, like F5 or right ⌥, or up to 3 keys together, like ⌃⌥M or ⌃⌥.")
                 Picker(selection: $model.extraButton) {
                     Text("Off").tag(0)
                     Text("Button 4 (back)").tag(3)
@@ -87,6 +88,8 @@ struct SettingsView: View {
                 SectionTitle("Zoom and rotate", symbol: "arrow.up.left.and.arrow.down.right")
             }
 
+            SpotlightSection()
+
             Section {
                 Toggle("Enabled", isOn: $model.enabled)
                 Toggle("Open at login", isOn: $model.launchAtLogin)
@@ -107,7 +110,22 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .overlay(alignment: .top) { TitlebarFade() }
         .frame(minWidth: 520, idealWidth: 580, minHeight: 560, idealHeight: 820)
+    }
+}
+
+/// Fades the content out under the transparent title bar, so it does not run into the window buttons.
+private struct TitlebarFade: View {
+    var body: some View {
+        let background = Color(nsColor: .windowBackgroundColor)
+        LinearGradient(stops: [.init(color: background, location: 0), .init(color: background, location: 0.5),
+                               .init(color: background.opacity(0), location: 1)],
+                       startPoint: .top, endPoint: .bottom)
+            .frame(height: 56)
+            .ignoresSafeArea(edges: .top)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 
@@ -137,7 +155,7 @@ private struct HeaderView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("MagicClick")
                         .font(.title2.weight(.bold))
-                    Text("Middle click, chord click and gestures for the Magic Mouse")
+                    Text("Middle click, chord click, gestures and a spotlight for the Magic Mouse")
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -384,26 +402,120 @@ struct MouseDiagram: View {
     }
 }
 
+// MARK: Spotlight
+
+private struct SpotlightSection: View {
+    @EnvironmentObject private var model: AppModel
+    @State private var screens = NSScreen.screens
+
+    var body: some View {
+        Section {
+            Toggle(isOn: $model.spotlightOn) {
+                Text("Show spotlight")
+                Text("Darkens the screen around the pointer, or draws a ring around it, so people can follow it in a demo or a recording.")
+            }
+            Picker("Style", selection: $model.spotlightStyle) {
+                Text("Spotlight").tag(SpotlightStyle.spotlight)
+                Text("Ring").tag(SpotlightStyle.ring)
+            }
+            .pickerStyle(.segmented)
+            ValueSlider(title: "Size", value: $model.spotlightSize, range: 80...600, text: "\(Int(model.spotlightSize)) pt")
+            if model.spotlightStyle == .spotlight {
+                ValueSlider(title: "Opacity", value: $model.spotlightDim, range: 0.1...0.95,
+                            text: "\(Int((model.spotlightDim * 100).rounded())) %")
+                ValueSlider(title: "Soft edge", value: $model.spotlightSoftness, range: 0...150,
+                            text: "\(Int(model.spotlightSoftness)) pt")
+                ColorPicker("Overlay color", selection: color(\.spotlightColor), supportsOpacity: false)
+            } else {
+                ColorPicker("Ring color", selection: color(\.ringColor), supportsOpacity: false)
+            }
+            Toggle(isOn: $model.spotlightPulse) {
+                Text("Pulse on click")
+                Text("A ring grows on each click, so people see when you click: blue left, orange right, purple middle.")
+            }
+            KeyRecorderRow(role: .spotlightToggle, title: "On/off key",
+                           detail: "Press the key to turn the spotlight on or off. One key or up to 3 keys together, like ⌃⌥S.")
+            KeyRecorderRow(role: .spotlightHold, title: "Hold key",
+                           detail: "Shows the spotlight only while you hold the key. Point at something, then let go. One key or up to 3 keys together.")
+            KeyRecorderRow(role: .windowShot, title: "Window screenshot key",
+                           detail: "Saves the window under the pointer with the spotlight, where macOS saves screenshots. One key or up to 3 keys together. The first time, macOS asks for Screen Recording permission.")
+            ForEach(screens, id: \.self) { screen in
+                Toggle(isOn: shows(screen)) {
+                    Label(screen.localizedName, systemImage: "display")
+                    Text("\(Int(screen.frame.width)) × \(Int(screen.frame.height)) pt")
+                }
+            }
+        } header: {
+            SectionTitle("Spotlight", symbol: "light.max")
+        } footer: {
+            Text("Screenshots, recordings and whole-screen sharing show the spotlight. A screenshot or a share of one window shows only that window, without the spotlight.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
+            screens = NSScreen.screens
+        }
+    }
+
+    private func color(_ keyPath: ReferenceWritableKeyPath<AppModel, NSColor>) -> Binding<Color> {
+        Binding { Color(nsColor: model[keyPath: keyPath]) } set: { model[keyPath: keyPath] = NSColor($0) }
+    }
+
+    private func shows(_ screen: NSScreen) -> Binding<Bool> {
+        let id = Spotlight.displayID(of: screen)
+        return Binding { !model.spotlightHiddenDisplays.contains(id) } set: { on in
+            if on { model.spotlightHiddenDisplays.remove(id) } else { model.spotlightHiddenDisplays.insert(id) }
+        }
+    }
+}
+
+private struct ValueSlider: View {
+    let title: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let text: String
+
+    var body: some View {
+        LabeledContent {
+            HStack(spacing: 10) {
+                Slider(value: $value, in: range)
+                Text(text)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .frame(width: 52, alignment: .trailing)
+            }
+        } label: {
+            Text(title)
+        }
+    }
+}
+
 // MARK: Key recorder
 
 private struct KeyRecorderRow: View {
     @EnvironmentObject private var model: AppModel
+    let role: KeyRole
+    let title: String
+    let detail: String
+
+    private var isRecording: Bool { model.recording == role }
+    private var key: KeyTrigger? { model[keyPath: role.keyPath] }
 
     var body: some View {
         LabeledContent {
             HStack(spacing: 6) {
                 Button {
-                    model.isRecording ? model.cancelRecording() : model.startRecording()
+                    isRecording ? model.cancelRecording() : model.startRecording(role)
                 } label: {
-                    Text(model.isRecording ? "Press a key…" : (model.trigger?.name ?? "Click to set"))
+                    Text(isRecording ? "Press a key…" : (key?.name ?? "Click to set"))
                         .font(.body.weight(.medium))
                         .frame(minWidth: 140)
                 }
                 .buttonStyle(.bordered)
-                .tint(model.isRecording ? .accentColor : nil)
-                if model.trigger != nil, !model.isRecording {
+                .tint(isRecording ? .accentColor : nil)
+                if key != nil, !isRecording {
                     Button {
-                        model.trigger = nil
+                        model[keyPath: role.keyPath] = nil
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                     }
@@ -414,10 +526,10 @@ private struct KeyRecorderRow: View {
             }
             .disabled(!model.tapRunning)
         } label: {
-            Text("Keyboard key")
-            Text(model.isRecording
-                 ? "Press any key. For a modifier on its own, press and release it. Esc cancels."
-                 : "Hold the key to hold the middle button. Works with F-keys, media keys, fn, and right ⌘ ⌥ ⌃ ⇧.")
+            Text(title)
+            Text(isRecording
+                 ? "Press a key or up to 3 keys together, for example F6, ⌃⌥S or ⌃⌥. For modifiers only, press them together, then let go. Esc cancels."
+                 : detail)
         }
     }
 }

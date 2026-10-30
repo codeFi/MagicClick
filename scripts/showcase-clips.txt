@@ -1,0 +1,9 @@
+# Spotlight clips for the showcase GIF, cut from a full-screen recording (2560x1440) with the spotlight on.
+# start<TAB>end<TAB>from crop<TAB>to crop<TAB>caption. Times in seconds. Crops are "x,y,w,h" in recording pixels, or "full".
+# Keep crops 16:9. The crop moves from "from" to "to" in the first half second of a clip.
+1.6	9.4	full	full	A spotlight follows your pointer
+22.6	25.6	full	880,150,800,450	Change the opacity while you watch
+26.0	29.2	880,150,800,450	880,150,800,450	Make the edge soft or sharp
+34.0	37.8	880,150,800,450	880,150,800,450	Make it bigger or smaller
+45.4	48.6	full	full	Pick any color
+51.0	53.4	full	full	Pick any color

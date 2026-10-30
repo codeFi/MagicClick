@@ -15,7 +15,7 @@ Only the latest release gets security fixes.
 
 | Version | Supported |
 | --- | --- |
-| 1.1.x (latest) | ✅ |
+| 1.2.x (latest) | ✅ |
 | Older | ❌ |
 
 ## Report a vulnerability
